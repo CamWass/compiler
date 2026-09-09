@@ -208,7 +208,7 @@ impl Visit<'_> for Analyser<'_> {
         node.name.visit_with(self);
         self.in_decl = old;
     }
-    fn visit_param(&mut self, node: &Param) {
+    fn visit_function_params(&mut self, node: &FunctionParams) {
         let old = self.in_decl;
         self.in_decl = true;
         node.visit_children_with(self);

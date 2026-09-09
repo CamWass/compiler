@@ -1,5 +1,6 @@
 use crate::{
-    GetNodeId, NodeId, class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat,
+    BindingPatOrIdent, GetNodeId, NodeId, class::Class, expr::Expr, function::Function,
+    ident::Ident,
 };
 use clone_node::CloneNode;
 use node_eq::NodeEq;
@@ -69,7 +70,7 @@ impl std::fmt::Debug for VarDeclKind {
 pub struct VarDeclarator {
     pub node_id: NodeId,
 
-    pub name: Pat,
+    pub name: BindingPatOrIdent,
 
     /// Initialization expression.
     pub init: Option<Box<Expr>>,

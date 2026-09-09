@@ -94,9 +94,7 @@ impl Parser<'_> {
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
                 key,
-                value: Box::new(Expr::Invalid(Invalid {
-                    node_id: node_id!(self, self.span(start)),
-                })),
+                value: Box::new(self.create_invalid_expr()),
             }));
         }
         //
@@ -198,9 +196,16 @@ impl Parser<'_> {
                     id_for_built_in!("get") => self
                         .parse_fn_args_body(start, Parser::parse_formal_params, false, false)
                         .map(|Function { body, params, .. }| {
-                            for param in &params {
+                            for param in &params.params {
                                 self.emit_err(
                                     get_span!(self, param.node_id),
+                                    SyntaxError::GetterParam,
+                                );
+                            }
+
+                            if let Some(rest) = params.rest_param {
+                                self.emit_err(
+                                    get_span!(self, rest.node_id),
                                     SyntaxError::GetterParam,
                                 );
                             }
@@ -220,20 +225,16 @@ impl Parser<'_> {
                     id_for_built_in!("set") => self
                         .parse_fn_args_body(start, Parser::parse_formal_params, false, false)
                         .map(|Function { params, body, .. }| {
-                            if params.len() != 1 {
+                            if let Some(rest_param) = &params.rest_param {
+                                self.emit_err(
+                                    get_span!(self, rest_param.node_id),
+                                    SyntaxError::RestPatInSetter,
+                                );
+                            } else if params.params.len() != 1 {
                                 self.emit_err(
                                     get_span!(self, key.node_id()),
                                     SyntaxError::SetterParam,
                                 );
-                            }
-
-                            if !params.is_empty() {
-                                if let Pat::Rest(first) = &params[0].pat {
-                                    self.emit_err(
-                                        get_span!(self, first.node_id),
-                                        SyntaxError::RestPatInSetter,
-                                    );
-                                }
                             }
 
                             if self.input.syntax().typescript()
@@ -246,14 +247,11 @@ impl Parser<'_> {
                                 node_id: node_id!(self, self.span(start)),
                                 key,
                                 body,
-                                param: params.into_iter().next().unwrap_or_else(|| {
-                                    Param::from_pat(
-                                        Pat::Invalid(Invalid {
-                                            node_id: node_id!(self, key_span),
-                                        }),
-                                        program_data!(self).data(),
-                                    )
-                                }),
+                                param: params
+                                    .params
+                                    .into_iter()
+                                    .next()
+                                    .unwrap_or_else(|| self.create_invalid_param()),
                             })
                         }),
                     id_for_built_in!("async") => self
@@ -287,11 +285,12 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn parse_object_pat(&mut self) -> PResult<Pat> {
+    pub(super) fn parse_object_binding_pat(&mut self) -> PResult<ObjectBindingPat> {
         let start = self.input.cur_pos();
         self.assert_and_bump(tok!('{'));
 
         let mut props = vec![];
+        let mut rest = None;
 
         let mut first = true;
         while !self.eat(tok!('}')) {
@@ -305,79 +304,54 @@ impl Parser<'_> {
                 }
             }
 
-            let prop = self.parse_object_pat_prop()?;
-            props.push(prop);
+            let start = self.input.cur_pos();
+
+            if self.eat(tok!("...")) {
+                // spread element
+
+                let arg = Box::new(BindingIdent::from_ident(self.parse_binding_ident()?));
+
+                rest = Some(BindingRestProperty {
+                    node_id: node_id!(self, self.span(start)),
+                    arg,
+                });
+                expect!(self, '}');
+                break;
+            } else {
+                let prop = self.parse_object_pat_prop()?;
+                props.push(prop);
+            }
         }
 
         let span = self.span(start);
-
-        let len = props.len();
-        for (i, p) in props.iter().enumerate() {
-            if i == len - 1 {
-                if let ObjectPatProp::Rest(rest) = p {
-                    match *rest.arg {
-                        Pat::Ident(..) => {}
-                        _ => syntax_error!(
-                            self,
-                            get_span!(self, rest.node_id),
-                            SyntaxError::DotsWithoutIdentifier
-                        ),
-                    }
-                }
-                continue;
-            }
-
-            if let ObjectPatProp::Rest(p) = p {
-                if self.syntax().early_errors() {
-                    syntax_error!(
-                        self,
-                        get_span!(self, p.node_id),
-                        SyntaxError::NonLastRestParam
-                    )
-                }
-            }
-        }
 
         // TS optional.
         if self.input.syntax().dts() || self.ctx().in_declare() {
             self.eat(tok!('?'));
         }
 
-        Ok(Pat::Object(ObjectPat {
+        Ok(ObjectBindingPat {
             node_id: node_id!(self, span),
             props,
-        }))
+            rest,
+        })
     }
 
-    /// Production 'BindingProperty'
-    fn parse_object_pat_prop(&mut self) -> PResult<ObjectPatProp> {
-        let start = self.input.cur_pos();
-
-        if self.eat(tok!("...")) {
-            // spread element
-
-            let arg = Box::new(self.parse_binding_pat_or_ident()?);
-
-            return Ok(ObjectPatProp::Rest(RestPat {
-                node_id: node_id!(self, self.span(start)),
-                arg,
-            }));
-        }
-
+    fn parse_object_pat_prop(&mut self) -> PResult<BindingProperty> {
         let key_start = self.input.cur_pos();
-        let key = self.parse_prop_name()?;
+        let prop = self.parse_prop_name()?;
         let key_span = Span::new(key_start, self.input.last_pos());
         if self.eat(tok!(':')) {
-            let value = Box::new(self.parse_binding_element()?);
+            let target = Box::new(self.parse_binding_element()?);
 
             let span = Span::new(key_start, self.input.last_pos());
-            return Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+            return Ok(BindingProperty {
                 node_id: node_id!(self, span),
-                key,
-                value,
-            }));
+                prop,
+                target,
+            });
         }
-        let key = match key {
+        let prop = match prop {
             PropName::Ident(ident) => ident,
             _ => unexpected!(self, "an identifier"),
         };
@@ -387,9 +361,9 @@ impl Parser<'_> {
                 .parse_assignment_expr(&mut AssignProps::Emit)
                 .map(Some)?
         } else {
-            if self.ctx().is_reserved_word(key.name) {
+            if self.ctx().is_reserved_word(prop.name) {
                 self.emit_err(
-                    get_span!(self, key.node_id),
+                    get_span!(self, prop.node_id),
                     SyntaxError::ReservedWordInObjShorthandOrPat,
                 );
             }
@@ -399,26 +373,29 @@ impl Parser<'_> {
 
         if let Some(value) = value {
             let pat_span = Span::new(key_start, self.input.last_pos());
-            let assign_pat = AssignPat {
+            Ok(BindingProperty {
                 node_id: node_id!(self, pat_span),
-                left: Box::new(Pat::Ident(BindingIdent {
-                    id: key.clone_node(program_data!(self).data()),
-                })),
-                right: value.unwrap(),
-            };
-            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
-                node_id: node_id!(self, pat_span),
-                key: PropName::Ident(key.clone_node(program_data!(self).data())),
-                value: Box::new(Pat::Assign(assign_pat)),
-            }))
+                prop: PropName::Ident(prop.clone_node(program_data!(self).data())),
+                target: Box::new(BindingElement {
+                    node_id: node_id!(self, pat_span),
+                    target: BindingPatOrIdent::Ident(BindingIdent {
+                        id: prop.clone_node(program_data!(self).data()),
+                    }),
+                    init: Some(value.unwrap()),
+                }),
+            })
         } else {
-            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+            Ok(BindingProperty {
                 node_id: node_id!(self, key_span),
-                value: Box::new(Pat::Ident(BindingIdent {
-                    id: key.clone_node(program_data!(self).data()),
-                })),
-                key: PropName::Ident(key),
-            }))
+                target: Box::new(BindingElement {
+                    node_id: node_id!(self, key_span),
+                    target: BindingPatOrIdent::Ident(BindingIdent {
+                        id: prop.clone_node(program_data!(self).data()),
+                    }),
+                    init: None,
+                }),
+                prop: PropName::Ident(prop),
+            })
         }
     }
 

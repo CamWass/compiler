@@ -117,6 +117,7 @@ macro_rules! make {
     };
 }
 
+// TODO: we can probably remove a bunch of these:
 make!(
     // class
     Class,
@@ -163,8 +164,6 @@ make!(
     BindingIdent,
     Ident,
     PrivateName,
-    //lib
-    Invalid,
     // Lit
     Str,
     Bool,
@@ -188,12 +187,6 @@ make!(
     //module
     Script,
     Module,
-    //pat
-    ArrayPat,
-    ObjectPat,
-    AssignPat,
-    RestPat,
-    KeyValuePatProp,
     //prop
     KeyValueProp,
     AssignProp,
@@ -252,7 +245,6 @@ impl<'ast> From<&'ast ::ast::Expr> for Node<'ast> {
             ::ast::Expr::Await(e) => Node::from(e),
             ::ast::Expr::PrivateName(e) => Node::from(e),
             ::ast::Expr::OptChain(e) => Node::from(e),
-            ::ast::Expr::Invalid(e) => Node::from(e),
         }
     }
 }
@@ -315,29 +307,6 @@ impl<'ast> From<&'ast ::ast::Program> for Node<'ast> {
     }
 }
 
-impl<'ast> From<&'ast ::ast::VarDeclOrPat> for Node<'ast> {
-    fn from(other: &'ast ::ast::VarDeclOrPat) -> Node<'ast> {
-        match other {
-            ::ast::VarDeclOrPat::VarDecl(n) => Node::from(n),
-            ::ast::VarDeclOrPat::Pat(n) => Node::from(n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::Pat> for Node<'ast> {
-    fn from(other: &'ast ::ast::Pat) -> Node<'ast> {
-        match other {
-            ::ast::Pat::Ident(p) => Node::from(p),
-            ::ast::Pat::Array(p) => Node::from(p),
-            ::ast::Pat::Rest(p) => Node::from(p),
-            ::ast::Pat::Object(p) => Node::from(p),
-            ::ast::Pat::Assign(p) => Node::from(p),
-            ::ast::Pat::Invalid(p) => Node::from(p),
-            ::ast::Pat::Expr(p) => Node::from(&**p),
-        }
-    }
-}
-
 impl<'ast> From<&'ast ::ast::ModuleItem> for Node<'ast> {
     fn from(other: &'ast ::ast::ModuleItem) -> Node<'ast> {
         match other {
@@ -356,55 +325,6 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
             ::ast::ModuleDecl::ExportDefaultDecl(n) => Node::from(n),
             ::ast::ModuleDecl::ExportDefaultExpr(n) => Node::from(n),
             ::ast::ModuleDecl::ExportAll(n) => Node::from(n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
-    fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
-        match other {
-            ast::Prop::KeyValue(n) => Node::from(n),
-            ast::Prop::Assign(_) => unreachable!(),
-            ast::Prop::Getter(n) => Node::from(n),
-            ast::Prop::Setter(n) => Node::from(n),
-            ast::Prop::Method(n) => Node::from(n),
-            ast::Prop::Spread(n) => Node::from(n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::ExprOrSpread> for Node<'ast> {
-    fn from(other: &'ast ::ast::ExprOrSpread) -> Node<'ast> {
-        match other {
-            ::ast::ExprOrSpread::Spread(n) => Node::from(n),
-            ::ast::ExprOrSpread::Expr(n) => Node::from(&**n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::ExprOrSuper> for Node<'ast> {
-    fn from(other: &'ast ::ast::ExprOrSuper) -> Node<'ast> {
-        match other {
-            ::ast::ExprOrSuper::Super(n) => Node::from(n),
-            ::ast::ExprOrSuper::Expr(n) => Node::from(&**n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::PatOrExpr> for Node<'ast> {
-    fn from(other: &'ast ::ast::PatOrExpr) -> Node<'ast> {
-        match other {
-            ast::PatOrExpr::Expr(n) => Node::from(&**n),
-            ast::PatOrExpr::Pat(n) => Node::from(&**n),
-        }
-    }
-}
-
-impl<'ast> From<&'ast ::ast::ObjectPatProp> for Node<'ast> {
-    fn from(other: &'ast ::ast::ObjectPatProp) -> Node<'ast> {
-        match other {
-            ast::ObjectPatProp::KeyValue(n) => Node::from(n),
-            ast::ObjectPatProp::Rest(n) => Node::from(n),
         }
     }
 }

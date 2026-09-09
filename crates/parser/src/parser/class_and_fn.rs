@@ -554,16 +554,11 @@ impl Parser<'_> {
 
                 if self.syntax().typescript() && body.is_none() {
                     // Declare constructors cannot have assignment pattern in parameters
-                    for p in &params {
+                    for p in &params.params {
                         // TODO: Search deeply for assignment pattern using a Visitor
 
-                        let span = match &p.pat {
-                            Pat::Assign(p) => Some(get_span!(self, p.node_id())),
-                            _ => None,
-                        };
-
-                        if let Some(span) = span {
-                            self.emit_err(span, SyntaxError::TS2371);
+                        if p.pat.init.is_some() {
+                            self.emit_err(get_span!(self, p.pat.node_id), SyntaxError::TS2371);
                         }
                     }
                 }
@@ -878,7 +873,7 @@ impl Parser<'_> {
         is_generator: bool,
     ) -> PResult<Function>
     where
-        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+        F: FnOnce(&mut Self) -> PResult<FunctionParams>,
     {
         Ok(self
             .parse_fn_args_body_or_ts_overload_sig(start, parse_args, is_async, is_generator)?
@@ -895,7 +890,7 @@ impl Parser<'_> {
         is_generator: bool,
     ) -> PResult<Option<Function>>
     where
-        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+        F: FnOnce(&mut Self) -> PResult<FunctionParams>,
     {
         // let prev_in_generator = self.ctx().in_generator;
         let mut ctx = self.ctx();
@@ -940,16 +935,14 @@ impl Parser<'_> {
                 None => {
                     if parser.syntax().typescript() {
                         // Declare functions cannot have assignment pattern in parameters
-                        for param in &params {
+                        for param in &params.params {
                             // TODO: Search deeply for assignment pattern using a Visitor
 
-                            let span = match &param.pat {
-                                Pat::Assign(p) => Some(get_span!(parser, p.node_id)),
-                                _ => None,
-                            };
-
-                            if let Some(span) = span {
-                                parser.emit_err(span, SyntaxError::TS2371);
+                            if param.pat.init.is_some() {
+                                parser.emit_err(
+                                    get_span!(parser, param.pat.node_id),
+                                    SyntaxError::TS2371,
+                                );
                             }
                         }
                         return Ok(None);
@@ -1023,7 +1016,7 @@ impl Parser<'_> {
         }: MakeMethodArgs,
     ) -> PResult<Option<ClassMember>>
     where
-        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+        F: FnOnce(&mut Self) -> PResult<FunctionParams>,
     {
         let is_static = static_token.is_some();
 
@@ -1048,20 +1041,22 @@ impl Parser<'_> {
         };
 
         if kind == MethodKind::Getter {
-            for param in &function.params {
+            for param in &function.params.params {
                 self.emit_err(get_span!(self, param.node_id), SyntaxError::GetterParam);
+            }
+            if let Some(rest) = &function.params.rest_param {
+                self.emit_err(get_span!(self, rest.node_id), SyntaxError::GetterParam);
             }
         }
 
         if kind == MethodKind::Setter {
-            if function.params.len() != 1 {
+            if let Some(rest_param) = &function.params.rest_param {
+                self.emit_err(
+                    get_span!(self, rest_param.node_id),
+                    SyntaxError::RestPatInSetter,
+                );
+            } else if function.params.params.len() != 1 {
                 self.emit_err(get_span!(self, key.node_id()), SyntaxError::SetterParam);
-            }
-
-            if !function.params.is_empty() {
-                if let Pat::Rest(first) = &function.params[0].pat {
-                    self.emit_err(get_span!(self, first.node_id), SyntaxError::RestPatInSetter);
-                }
             }
         }
 

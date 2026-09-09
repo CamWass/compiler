@@ -41,6 +41,11 @@ pub fn find_vars_declared_in_fn(
         skip_multi_decl_destructuring,
     };
     function.params.iter().for_each(|p| p.visit_with(&mut v));
+    if let Some(rest_param) = function.rest_param {
+        v.in_param = true;
+        rest_param.visit_with(&mut v);
+        v.in_param = false;
+    }
     function.body.visit_with(&mut v);
     v.vars
 }
@@ -163,7 +168,19 @@ struct DestructuringFinder<'a> {
 }
 
 /// Finds all **binding** idents of `node`.
-pub fn find_pat_ids(node: &Pat) -> Vec<(NameId, NodeId)> {
+pub fn find_assign_target_ids(node: &AssignTarget) -> Vec<(NameId, NodeId)> {
+    let mut found = vec![];
+
+    {
+        let mut v = DestructuringFinder { found: &mut found };
+        node.visit_with(&mut v);
+    }
+
+    found
+}
+
+/// Finds all **binding** idents of `node`.
+pub fn find_pat_ids(node: &BindingPatOrIdent) -> Vec<(NameId, NodeId)> {
     let mut found = vec![];
 
     {
@@ -190,7 +207,7 @@ struct FindFirstLHSIdent<'ast> {
 }
 
 /// Finds the first LHS ident in a pattern.
-pub fn find_first_lhs_ident(node: &mut Pat) -> Option<&mut Ident> {
+pub fn find_first_lhs_ident(node: &mut BindingPatOrIdent) -> Option<&mut Ident> {
     let mut v = FindFirstLHSIdent { found: None };
     node.visit_mut_with(&mut v);
 
@@ -202,12 +219,6 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
     fn visit_mut_expr(&mut self, _: &'ast mut Expr) {}
     fn visit_mut_prop_name(&mut self, _: &'ast mut PropName) {}
 
-    fn visit_mut_pat(&mut self, node: &'ast mut Pat) {
-        if self.found.is_none() {
-            node.visit_mut_children_with(self);
-        }
-    }
-
     fn visit_mut_binding_ident(&mut self, i: &'ast mut BindingIdent) {
         if self.found.is_none() {
             self.found = Some(&mut i.id);
@@ -218,6 +229,7 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
 #[derive(Clone, Copy)]
 pub struct FunctionLikeNode<'a> {
     pub params: &'a [Param],
+    pub rest_param: Option<&'a BindingRestElement>,
     pub body: &'a BlockStmt,
 }
 
@@ -225,14 +237,20 @@ impl<'a, T: FunctionLike> From<&'a T> for FunctionLikeNode<'a> {
     fn from(value: &'a T) -> Self {
         FunctionLikeNode {
             params: value.params(),
+            rest_param: value.rest_param(),
             body: value.body(),
         }
     }
 }
 
 pub trait FunctionLike {
+    // TODO: Rather than separate methods for standard/rest params, can we just
+    // return Option<&FunctionParams>?
     fn params(&self) -> &[Param];
     fn params_mut(&mut self) -> &mut [Param];
+
+    fn rest_param(&self) -> Option<&BindingRestElement>;
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement>;
 
     fn body(&self) -> &BlockStmt;
     fn body_mut(&mut self) -> &mut BlockStmt;
@@ -240,11 +258,19 @@ pub trait FunctionLike {
 
 impl FunctionLike for Function {
     fn params(&self) -> &[Param] {
-        &self.params
+        &self.params.params
     }
 
     fn params_mut(&mut self) -> &mut [Param] {
-        &mut self.params
+        &mut self.params.params
+    }
+
+    fn rest_param(&self) -> Option<&BindingRestElement> {
+        self.params.rest_param.as_ref()
+    }
+
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement> {
+        self.params.rest_param.as_mut()
     }
 
     fn body(&self) -> &BlockStmt {
@@ -257,11 +283,19 @@ impl FunctionLike for Function {
 }
 impl FunctionLike for Constructor {
     fn params(&self) -> &[Param] {
-        &self.params
+        &self.params.params
     }
 
     fn params_mut(&mut self) -> &mut [Param] {
-        &mut self.params
+        &mut self.params.params
+    }
+
+    fn rest_param(&self) -> Option<&BindingRestElement> {
+        self.params.rest_param.as_ref()
+    }
+
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement> {
+        self.params.rest_param.as_mut()
     }
 
     fn body(&self) -> &BlockStmt {
@@ -274,11 +308,19 @@ impl FunctionLike for Constructor {
 }
 impl FunctionLike for ArrowExpr {
     fn params(&self) -> &[Param] {
-        &self.params
+        &self.params.params
     }
 
     fn params_mut(&mut self) -> &mut [Param] {
-        &mut self.params
+        &mut self.params.params
+    }
+
+    fn rest_param(&self) -> Option<&BindingRestElement> {
+        self.params.rest_param.as_ref()
+    }
+
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement> {
+        self.params.rest_param.as_mut()
     }
 
     fn body(&self) -> &BlockStmt {
@@ -298,6 +340,14 @@ impl FunctionLike for GetterProp {
         &mut []
     }
 
+    fn rest_param(&self) -> Option<&BindingRestElement> {
+        None
+    }
+
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement> {
+        None
+    }
+
     fn body(&self) -> &BlockStmt {
         &self.body
     }
@@ -313,6 +363,14 @@ impl FunctionLike for SetterProp {
 
     fn params_mut(&mut self) -> &mut [Param] {
         std::slice::from_mut(&mut self.param)
+    }
+
+    fn rest_param(&self) -> Option<&BindingRestElement> {
+        None
+    }
+
+    fn rest_param_mut(&mut self) -> Option<&mut BindingRestElement> {
+        None
     }
 
     fn body(&self) -> &BlockStmt {

@@ -1,4 +1,6 @@
-use crate::{GetNodeId, NodeId, ProgramData, pat::Pat, stmt::BlockStmt};
+use crate::{
+    BindingRestElement, GetNodeId, NodeId, ProgramData, pat::BindingElement, stmt::BlockStmt,
+};
 use bitflags::bitflags;
 use clone_node::CloneNode;
 use node_eq::NodeEq;
@@ -10,7 +12,7 @@ use serde::Serialize;
 pub struct Function {
     pub node_id: NodeId,
 
-    pub params: Vec<Param>,
+    pub params: FunctionParams,
 
     pub body: BlockStmt,
 
@@ -50,14 +52,27 @@ impl crate::NodeEq for FnFlags {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Param {
     pub node_id: NodeId,
-    pub pat: Pat,
+    pub pat: BindingElement,
 }
 
 impl Param {
-    pub fn from_pat(pat: Pat, program_data: &mut ProgramData) -> Self {
+    pub fn from_pat(pat: BindingElement, program_data: &mut ProgramData) -> Self {
         Self {
             node_id: program_data.new_id_from(pat.node_id()),
             pat,
         }
+    }
+}
+
+#[derive(Debug, CloneNode, NodeEq, Serialize)]
+pub struct FunctionParams {
+    pub params: Vec<Param>,
+    pub rest_param: Option<BindingRestElement>,
+}
+
+impl FunctionParams {
+    /// Returns true if there are any standard params or a rest param.
+    pub fn is_empty(&self) -> bool {
+        self.params.is_empty() && self.rest_param.is_none()
     }
 }

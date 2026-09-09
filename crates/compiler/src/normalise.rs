@@ -31,15 +31,9 @@ impl VisitMut<'_> for Normaliser<'_> {
     fn visit_mut_assign_expr(&mut self, node: &mut AssignExpr) {
         node.visit_mut_children_with(self);
 
-        let lhs_ident = match &node.left {
-            PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-                Expr::Ident(lhs) => lhs,
-                _ => return,
-            },
-            PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-                Pat::Ident(lhs) => &lhs.id,
-                _ => return,
-            },
+        let lhs_ident = match node.left.as_ref() {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => &ident.id,
+            _ => return,
         };
 
         let op = match node.op {

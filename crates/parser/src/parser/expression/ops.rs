@@ -16,17 +16,11 @@ impl Parser<'_> {
                 if self.input.cur() == Token::In && include_in_expr {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                    Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, err.error.0),
-                    }))
-                    .into()
+                    Box::new(self.create_invalid_expr()).into()
                 } else if self.input.cur() == Token::InstanceOf || self.input.cur().is_binary_op() {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                    Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, err.error.0),
-                    }))
-                    .into()
+                    Box::new(self.create_invalid_expr()).into()
                 } else if self.input.cur() == Token::Error {
                     let error = self.input.expect_error_token_and_bump();
                     return Err(error);
@@ -241,13 +235,13 @@ impl Parser<'_> {
             let arg = self.parse_unary_expr(&mut AssignProps::Emit)?;
             let hi = get_span!(self, arg.node_id()).hi();
             let span = Span::new(start, hi);
-            self.check_assign_target(arg.inner(), false);
+            let arg = self.reparse_expr_as_simple_assign_target(arg.unwrap());
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
                 node_id: node_id!(self, span),
                 prefix: true,
                 op,
-                arg: arg.unwrap(),
+                arg: Box::new(arg),
             }))
             .into());
         }
@@ -273,16 +267,11 @@ impl Parser<'_> {
                 tok!('!') => op!("!"),
                 _ => unreachable!(),
             };
-            let arg_start = self.input.cur_pos() - BytePos(1);
             let arg = match self.parse_unary_expr(&mut AssignProps::Emit) {
                 Ok(expr) => expr,
                 Err(err) => {
                     self.emit_error(err);
-                    let span = Span::new(arg_start, arg_start);
-                    Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, span),
-                    }))
-                    .into()
+                    Box::new(self.create_invalid_expr()).into()
                 }
             };
 
@@ -328,7 +317,7 @@ impl Parser<'_> {
         }
 
         if self.is(tok!("++")) || self.is(tok!("--")) {
-            self.check_assign_target(expr.inner(), false);
+            let expr = self.reparse_expr_as_simple_assign_target(expr.unwrap());
 
             let op = if self.input.bump() == tok!("++") {
                 op!("++")
@@ -341,7 +330,7 @@ impl Parser<'_> {
                 node_id: node_id!(self, span),
                 prefix: false,
                 op,
-                arg: expr.unwrap(),
+                arg: Box::new(expr),
             }))
             .into());
         }

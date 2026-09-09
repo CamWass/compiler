@@ -524,7 +524,6 @@ impl Visitor<'_> {
             },
 
             Expr::Fn(_) | Expr::Arrow(_) | Expr::Cond(_) => unreachable!("handled above"),
-            Expr::Invalid(_) => unreachable!(),
         }
     }
 
@@ -1335,7 +1334,7 @@ impl Visitor<'_> {
                 kind: VarDeclKind::Var,
                 decls: vec![VarDeclarator {
                     node_id: self.program_data.new_id_from(name_node_id),
-                    name: Pat::Ident(BindingIdent {
+                    name: BindingPatOrIdent::Ident(BindingIdent {
                         id: Ident {
                             node_id: self.program_data.new_id_from(name_node_id),
                             name,
@@ -1395,7 +1394,7 @@ impl Visitor<'_> {
                                 kind: VarDeclKind::Let,
                                 decls: vec![VarDeclarator {
                                     node_id: self.program_data.new_id_from(name_node_id),
-                                    name: Pat::Ident(BindingIdent {
+                                    name: BindingPatOrIdent::Ident(BindingIdent {
                                         id: Ident {
                                             node_id: self.program_data.new_id_from(name_node_id),
                                             name,
@@ -1479,7 +1478,7 @@ impl Visitor<'_> {
                                     kind: VarDeclKind::Let,
                                     decls: vec![VarDeclarator {
                                         node_id: self.program_data.new_id_from(name_node_id),
-                                        name: Pat::Ident(BindingIdent {
+                                        name: BindingPatOrIdent::Ident(BindingIdent {
                                             id: Ident {
                                                 node_id: self
                                                     .program_data
@@ -1627,8 +1626,8 @@ impl VisitMut<'_> for Visitor<'_> {
                 let decl = &mut var.decls[0];
 
                 let is_left_empty_destructuring = match &decl.name {
-                    Pat::Array(left) => left.elems.is_empty(),
-                    Pat::Object(left) => left.props.is_empty(),
+                    BindingPatOrIdent::Array(left) => left.elems.is_empty() && left.rest.is_none(),
+                    BindingPatOrIdent::Object(left) => left.props.is_empty() && left.rest.is_none(),
                     _ => false,
                 };
 
@@ -1734,8 +1733,8 @@ impl VisitMut<'_> for Visitor<'_> {
                 let decl = &mut var.decls[0];
 
                 let is_left_empty_destructuring = match &decl.name {
-                    Pat::Array(left) => left.elems.is_empty(),
-                    Pat::Object(left) => left.props.is_empty(),
+                    BindingPatOrIdent::Array(left) => left.elems.is_empty() && left.rest.is_none(),
+                    BindingPatOrIdent::Object(left) => left.props.is_empty() && left.rest.is_none(),
                     _ => false,
                 };
 
@@ -1768,15 +1767,9 @@ impl VisitMut<'_> for Visitor<'_> {
         match node {
             Expr::Assign(expr) => {
                 if expr.op == AssignOp::Assign {
-                    let left_ident = match &expr.left {
-                        PatOrExpr::Expr(left) => match left.as_ref() {
-                            Expr::Ident(left) => Some(left),
-                            _ => None,
-                        },
-                        PatOrExpr::Pat(left) => match left.as_ref() {
-                            Pat::Ident(left) => Some(&left.id),
-                            _ => None,
-                        },
+                    let left_ident = match expr.left.as_ref() {
+                        AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => Some(&ident.id),
+                        _ => None,
                     };
 
                     let right_ident = match expr.right.as_ref() {
@@ -1794,13 +1787,16 @@ impl VisitMut<'_> for Visitor<'_> {
                         }
                     }
 
-                    let is_left_empty_destructuring = match &expr.left {
-                        PatOrExpr::Pat(left) => match left.as_ref() {
-                            Pat::Array(left) => left.elems.is_empty(),
-                            Pat::Object(left) => left.props.is_empty(),
-                            _ => false,
+                    let is_left_empty_destructuring = match expr.left.as_ref() {
+                        AssignTarget::AssignmentPat(left) => match left {
+                            AssignmentPat::Array(left) => {
+                                left.elems.is_empty() && left.rest.is_none()
+                            }
+                            AssignmentPat::Object(left) => {
+                                left.props.is_empty() && left.rest.is_none()
+                            }
                         },
-                        PatOrExpr::Expr(_) => false,
+                        AssignTarget::Simple(_) => false,
                     };
 
                     if is_left_empty_destructuring {
@@ -1905,32 +1901,23 @@ impl VisitMut<'_> for Visitor<'_> {
         }
     }
 
-    fn visit_mut_object_pat(&mut self, node: &mut ObjectPat) {
+    fn visit_mut_object_binding_pat(&mut self, node: &mut ObjectBindingPat) {
         node.visit_mut_children_with(self);
 
-        let has_rest_prop = node
-            .props
-            .iter()
-            .any(|p| matches!(p, ObjectPatProp::Rest(_)));
-
-        if has_rest_prop {
+        if node.rest.is_some() {
             return;
         }
 
         node.props.retain(|prop| {
-            let ObjectPatProp::KeyValue(prop) = prop else {
-                unreachable!();
-            };
-
-            // TODO: we can check or side effects here and continue if the key
+            // TODO: we can check for side effects here and continue if the key
             // is side-effect free.
-            if matches!(prop.key, PropName::Computed(_)) {
+            if matches!(prop.prop, PropName::Computed(_)) {
                 // Don't remove computed properties, since they might have side
                 // effects.
                 return true;
             }
 
-            if isRemovableDestructuringTarget(&prop.value) {
+            if is_removable_binding_element(&prop.target) {
                 // e.g. `const {f: {}} = obj;`
                 return false;
             }
@@ -1939,7 +1926,32 @@ impl VisitMut<'_> for Visitor<'_> {
         });
     }
 
-    fn visit_mut_array_pat(&mut self, node: &mut ArrayPat) {
+    fn visit_mut_object_assignment_pat(&mut self, node: &mut ObjectAssignmentPat) {
+        node.visit_mut_children_with(self);
+
+        if node.rest.is_some() {
+            return;
+        }
+
+        node.props.retain(|prop| {
+            // TODO: we can check for side effects here and continue if the key
+            // is side-effect free.
+            if matches!(prop.prop, PropName::Computed(_)) {
+                // Don't remove computed properties, since they might have side
+                // effects.
+                return true;
+            }
+
+            if is_removable_assignment_element(&prop.target) {
+                // e.g. `const {f: {}} = obj;`
+                return false;
+            }
+
+            true
+        });
+    }
+
+    fn visit_mut_array_assignment_pat(&mut self, node: &mut ArrayAssignmentPat) {
         node.visit_mut_children_with(self);
 
         // Remove trailing empty patterns and array/object patterns with no
@@ -1947,13 +1959,19 @@ impl VisitMut<'_> for Visitor<'_> {
         // We can only remove patterns if they're trailing - removing
         // non-trailing elements changes the order that the other elements
         // are assigned in.
+
+        if node.rest.is_some() {
+            // Rest pat is the last pat.
+            return;
+        }
+
         let number_to_remove = node
             .elems
             .iter()
             .rev()
             .take_while(|element| {
                 if let Some(element) = element {
-                    isRemovableDestructuringTarget(element)
+                    is_removable_assignment_element(element)
                 } else {
                     true
                 }
@@ -1963,59 +1981,115 @@ impl VisitMut<'_> for Visitor<'_> {
         node.elems.truncate(node.elems.len() - number_to_remove);
     }
 
-    fn visit_mut_pat(&mut self, node: &mut Pat) {
+    fn visit_mut_array_binding_pat(&mut self, node: &mut ArrayBindingPat) {
         node.visit_mut_children_with(self);
 
-        if let Pat::Assign(assign) = node {
-            let mut remove_default_value = false;
+        // Remove trailing empty patterns and array/object patterns with no
+        // children.
+        // We can only remove patterns if they're trailing - removing
+        // non-trailing elements changes the order that the other elements
+        // are assigned in.
 
-            // If the default is `undefined` always remove the value
-            if matches!(
-                assign.right.as_ref(),
-                Expr::Ident(Ident {
-                    name: id_for_built_in!("undefined"),
-                    ..
-                })
-            ) {
-                remove_default_value = true;
-            }
+        if node.rest.is_some() {
+            // Rest pat is the last pat.
+            return;
+        }
 
-            // If the `void` application is pure, remove the value
-            if let Expr::Unary(UnaryExpr {
-                op: UnaryOp::Void,
-                arg,
-                ..
-            }) = assign.right.as_ref()
-            {
-                remove_default_value = !expr_may_have_side_effects(arg);
-            }
+        let number_to_remove = node
+            .elems
+            .iter()
+            .rev()
+            .take_while(|element| {
+                if let Some(element) = element {
+                    is_removable_binding_element(element)
+                } else {
+                    true
+                }
+            })
+            .count();
 
-            if remove_default_value {
-                *node = assign.left.as_mut().take();
-            }
+        node.elems.truncate(node.elems.len() - number_to_remove);
+    }
+
+    fn visit_mut_binding_element(&mut self, node: &mut BindingElement) {
+        node.visit_mut_children_with(self);
+
+        if node.init.as_deref().is_some_and(is_removable_default_value) {
+            node.init = None;
+        }
+    }
+
+    fn visit_mut_assignment_element(&mut self, node: &mut AssignmentElement) {
+        node.visit_mut_children_with(self);
+
+        if node.init.as_deref().is_some_and(is_removable_default_value) {
+            node.init = None;
         }
     }
 }
 
-fn isRemovableDestructuringTarget(pat: &Pat) -> bool {
-    let mut target = pat;
-    let mut default_value = None;
-
-    if let Pat::Assign(assign) = pat {
-        target = &assign.left;
-        default_value = Some(&assign.right)
+fn is_removable_default_value(default_value: &Expr) -> bool {
+    // If the default is `undefined` always remove the value
+    if matches!(
+        default_value,
+        Expr::Ident(Ident {
+            name: id_for_built_in!("undefined"),
+            ..
+        })
+    ) {
+        return true;
     }
 
-    match target {
-        Pat::Array(array_pat) if !array_pat.elems.is_empty() => return false,
-        Pat::Object(object_pat) if !object_pat.props.is_empty() => return false,
-        Pat::Ident(_) | Pat::Rest(_) | Pat::Assign(_) | Pat::Invalid(_) | Pat::Expr(_) => {
-            return false;
+    // If the `void` application is pure, remove the value
+    if let Expr::Unary(UnaryExpr {
+        op: UnaryOp::Void,
+        arg,
+        ..
+    }) = default_value
+    {
+        return !expr_may_have_side_effects(arg);
+    }
+
+    false
+}
+
+fn is_removable_assignment_element(el: &AssignmentElement) -> bool {
+    let is_empty_destructuring = match el.target.as_ref() {
+        AssignTarget::Simple(_) => false,
+        AssignTarget::AssignmentPat(assignment_pat) => match assignment_pat {
+            AssignmentPat::Array(array_assignment_pat) => {
+                array_assignment_pat.elems.is_empty() && array_assignment_pat.rest.is_none()
+            }
+
+            AssignmentPat::Object(object_assignment_pat) => {
+                object_assignment_pat.props.is_empty() && object_assignment_pat.rest.is_none()
+            }
+        },
+    };
+
+    is_empty_destructuring
+        && el
+            .init
+            .as_ref()
+            .is_none_or(|v| !expr_may_have_side_effects(v))
+}
+
+fn is_removable_binding_element(el: &BindingElement) -> bool {
+    let is_empty_destructuring = match &el.target {
+        BindingPatOrIdent::Array(array_binding_pat) => {
+            array_binding_pat.elems.is_empty() && array_binding_pat.rest.is_none()
         }
-        _ => {}
-    }
+        BindingPatOrIdent::Object(object_binding_pat) => {
+            object_binding_pat.props.is_empty() && object_binding_pat.rest.is_none()
+        }
+        BindingPatOrIdent::Ident(_) => false,
+    };
 
-    default_value.is_none_or(|v| !expr_may_have_side_effects(v))
+    is_empty_destructuring
+        && el
+            .init
+            .as_ref()
+            .is_none_or(|v| !expr_may_have_side_effects(v))
 }
 
 /**

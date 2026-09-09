@@ -803,7 +803,7 @@ fn get_flow_state_at_declaration(
                 // TODO: THIS IS NOT TRUE ATM - we don't yet normalize like closure does.
                 assert!(d.decls.len() == 1);
                 let decl = d.decls.first().unwrap();
-                if let Pat::Ident(n) = &decl.name {
+                if let BindingPatOrIdent::Ident(n) = &decl.name {
                     if program_data.get_name_text(n.id.name) == name {
                         let decl = Node::from(d);
                         return liveness

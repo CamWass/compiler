@@ -83,7 +83,10 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
         // Avoid cases where we have for(var x = foo() in a) { ....
         // TODO: make this more precise:
         // Stmt::ForIn(f) => !may_have_side_effects(&f.left),
-        Stmt::ForIn(f) => matches!(f.left.as_ref(), VarDeclOrPat::Pat(Pat::Ident(_))),
+        Stmt::ForIn(f) => matches!(
+            f.left.as_ref(),
+            VarDeclOrAssignTarget::AssignTarget(AssignTarget::Simple(SimpleAssignTarget::Ident(_)))
+        ),
         Stmt::Labeled(l) => is_fusable_control_statement(&l.body),
         Stmt::Block(b) => b
             .stmts

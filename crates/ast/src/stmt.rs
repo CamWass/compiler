@@ -1,9 +1,8 @@
 use crate::{
-    GetNodeId, NodeId,
+    BindingPatOrIdent, GetNodeId, NodeId,
     decl::{Decl, VarDecl},
-    expr::Expr,
+    expr::{AssignTarget, Expr},
     ident::Ident,
-    pat::Pat,
 };
 use clone_node::CloneNode;
 use common::util::take::Take;
@@ -229,7 +228,7 @@ pub struct ForStmt {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ForInStmt {
     pub node_id: NodeId,
-    pub left: Box<VarDeclOrPat>,
+    pub left: Box<VarDeclOrAssignTarget>,
     pub right: Box<Expr>,
     pub body: Box<BlockStmt>,
 }
@@ -239,7 +238,7 @@ pub struct ForOfStmt {
     pub node_id: NodeId,
     /// for-await-of statements, e.g., `for await (const x of xs) {`
     pub is_await: bool,
-    pub left: Box<VarDeclOrPat>,
+    pub left: Box<VarDeclOrAssignTarget>,
     pub right: Box<Expr>,
     pub body: Box<BlockStmt>,
 }
@@ -267,7 +266,7 @@ pub struct CatchClause {
     ///
     /// The param is null if the catch binding is omitted. E.g., try { foo() }
     /// catch { bar() }
-    pub param: Option<Pat>,
+    pub param: Option<BindingPatOrIdent>,
 
     pub body: BlockStmt,
 }
@@ -283,16 +282,11 @@ impl Take for CatchClause {
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
-pub enum VarDeclOrPat {
+pub enum VarDeclOrAssignTarget {
+    // TODO: enforce at the AST-level that this can only contain one variable
+    // declarator.
     VarDecl(VarDecl),
-
-    Pat(Pat),
-}
-
-impl Take for VarDeclOrPat {
-    fn dummy() -> Self {
-        VarDeclOrPat::Pat(Pat::dummy())
-    }
+    AssignTarget(AssignTarget),
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

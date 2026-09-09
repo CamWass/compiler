@@ -622,7 +622,6 @@ pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
                 }
             }
         }
-        Expr::Invalid(_) => unreachable!(),
     }
 }
 
@@ -632,77 +631,31 @@ fn assign_expr_may_have_side_effects(assign: &AssignExpr) -> bool {
     // b) The LHS has side effects; or
     // c) A name on the LHS will exist beyond this expression;
 
-    // We assume that assigning to a plain identifier has side-effects.
-    match &assign.left {
-        PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-            Expr::Ident(_) => return true,
-            _ => {}
+    let lhs_may_have_side_effects = match assign.left.as_ref() {
+        AssignTarget::Simple(simple_assign_target) => match simple_assign_target {
+            // We assume that assigning to a plain identifier has side-effects.
+            SimpleAssignTarget::Ident(_) => true,
+            // TODO: port closure's logic.
+            SimpleAssignTarget::Member(_) => true,
         },
-        PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-            Pat::Ident(_) => return true,
-            Pat::Expr(lhs) => match lhs.as_ref() {
-                Expr::Ident(_) => return true,
-                _ => {}
-            },
-            _ => {}
+        AssignTarget::AssignmentPat(assignment_pat) => match assignment_pat {
+            // Array destructuring iterates the RHS, which can have side-effects.
+            AssignmentPat::Array(_) => true,
+            AssignmentPat::Object(object_assignment_pat) => {
+                !object_assignment_pat.props.is_empty() || object_assignment_pat.rest.is_some()
+            }
         },
-    }
-
-    if expr_may_have_side_effects(&assign.right) {
-        return true;
-    }
-
-    let lhs_may_have_side_effects = match &assign.left {
-        PatOrExpr::Expr(lhs) => expr_may_have_side_effects(lhs),
-        PatOrExpr::Pat(lhs) => pat_may_have_side_effects(lhs),
     };
 
     if lhs_may_have_side_effects {
         return true;
     }
 
-    let member = match &assign.left {
-        PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-            Expr::Member(m) => Some(m),
-            _ => None,
-        },
-        PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-            Pat::Expr(lhs) => match lhs.as_ref() {
-                Expr::Member(m) => Some(m),
-                _ => None,
-            },
-            _ => None,
-        },
-    };
-
-    if let Some(_) = member {
-        // TODO: port closure's logic.
-        true
-    } else {
-        true
+    if expr_may_have_side_effects(&assign.right) {
+        return true;
     }
-}
 
-fn pat_may_have_side_effects(pat: &Pat) -> bool {
-    match pat {
-        Pat::Ident(_) => false,
-        // Array destructuring iterates the RHS, which can have side-effects.
-        Pat::Array(_) => true,
-        Pat::Rest(rest) => pat_may_have_side_effects(&rest.arg),
-        Pat::Object(obj) => obj.props.iter().any(|p| match p {
-            ObjectPatProp::KeyValue(key_value_pat_prop) => {
-                prop_name_may_have_side_effects(&key_value_pat_prop.key)
-                    || pat_may_have_side_effects(&key_value_pat_prop.value)
-            }
-            ObjectPatProp::Rest(rest) => pat_may_have_side_effects(&rest.arg),
-        }),
-        Pat::Assign(assign) => {
-            pat_may_have_side_effects(&assign.left) || expr_may_have_side_effects(&assign.right)
-        }
-        Pat::Expr(expr) => expr_may_have_side_effects(expr),
-
-        Pat::Invalid(_) => unreachable!(),
-    }
+    false
 }
 
 fn expr_or_super_may_have_side_effects(expr_or_super: &ExprOrSuper) -> bool {
@@ -922,7 +875,6 @@ pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
             | Expr::Yield(_)
             | Expr::PrivateName(_)
             | Expr::OptChain(_)
-            | Expr::Invalid(_)
             | Expr::This(_)
             | Expr::TaggedTpl(_)
             | Expr::MetaProp(_) => return TypeFlags::UNKNOWN,
@@ -931,11 +883,7 @@ pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
             Expr::Await(await_expr) => expr = &await_expr.arg,
 
             Expr::Ident(ident) => {
-                return match ident.name {
-                    id_for_built_in!("undefined") => TypeFlags::UNDEFINED,
-                    id_for_built_in!("NaN") | id_for_built_in!("Infinity") => TypeFlags::NUMBER,
-                    _ => TypeFlags::UNKNOWN,
-                };
+                return get_known_value_type_of_ident(ident);
             }
 
             Expr::Unary(unary_expr) => {
@@ -966,7 +914,10 @@ pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
             }
             // BigInt if arg is BigInt, otherwise Number.
             Expr::Update(update) => {
-                let arg = getKnownValueType(&update.arg);
+                let arg = match update.arg.as_ref() {
+                    SimpleAssignTarget::Ident(ident) => get_known_value_type_of_ident(&ident.id),
+                    SimpleAssignTarget::Member(_) => TypeFlags::UNKNOWN,
+                };
                 if arg == TypeFlags::BIG_INT {
                     // Arg is definitely BigInt, so the result is definitely
                     // BigInt too.
@@ -1150,6 +1101,14 @@ pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
             },
             Expr::Tpl(_) => return TypeFlags::STRING,
         }
+    }
+}
+
+pub fn get_known_value_type_of_ident(ident: &Ident) -> TypeFlags {
+    match ident.name {
+        id_for_built_in!("undefined") => TypeFlags::UNDEFINED,
+        id_for_built_in!("NaN") | id_for_built_in!("Infinity") => TypeFlags::NUMBER,
+        _ => TypeFlags::UNKNOWN,
     }
 }
 

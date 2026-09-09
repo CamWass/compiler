@@ -180,22 +180,25 @@ impl CoalesceVariableNames<'_> {
 
     fn handle_enhanced_for(
         &mut self,
-        left: &mut VarDeclOrPat,
+        left: &mut VarDeclOrAssignTarget,
         right: &mut Expr,
         body: &mut BlockStmt,
     ) {
-        if let VarDeclOrPat::VarDecl(var_decl) = left {
+        if let VarDeclOrAssignTarget::VarDecl(var_decl) = left {
             assert!(var_decl.decls.len() == 1);
             let decl = var_decl.decls.first_mut().unwrap();
             debug_assert!(decl.init.is_none());
 
-            if let Pat::Ident(lhs) = &mut decl.name {
+            if let BindingPatOrIdent::Ident(lhs) = &mut decl.name {
                 match self.maybe_coalesce_name(&mut lhs.id) {
                     CoalesceResult::NameIsCoalesceTarget => {
                         // convert `for (let x of ...` to `for (x of ...`
-                        let var_decl = unwrap_as!(left, VarDeclOrPat::VarDecl(d), d);
+                        let var_decl = unwrap_as!(left, VarDeclOrAssignTarget::VarDecl(d), d);
                         let decl = var_decl.decls.pop().unwrap();
-                        *left = VarDeclOrPat::Pat(decl.name);
+                        let name = unwrap_as!(decl.name, BindingPatOrIdent::Ident(i), i);
+                        *left = VarDeclOrAssignTarget::AssignTarget(AssignTarget::Simple(
+                            SimpleAssignTarget::Ident(name),
+                        ));
                     }
                     CoalesceResult::NameIsCoalesceSource => {
                         // Convert `const` or `let` declarations to `var` declarations.
@@ -212,9 +215,15 @@ impl CoalesceVariableNames<'_> {
                 match self.maybe_coalesce_name(lhs) {
                     CoalesceResult::NameIsCoalesceTarget => {
                         // convert `for (let [x] of ...` to `for ([x] of ...`
-                        let var_decl = unwrap_as!(left, VarDeclOrPat::VarDecl(d), d);
+                        let var_decl = unwrap_as!(left, VarDeclOrAssignTarget::VarDecl(d), d);
                         let decl = var_decl.decls.pop().unwrap();
-                        *left = VarDeclOrPat::Pat(decl.name);
+
+                        let left_pat = AssignTarget::from_binding_pat_or_ident(
+                            decl.name,
+                            self.program_data.data(),
+                        );
+
+                        *left = VarDeclOrAssignTarget::AssignTarget(left_pat);
                     }
                     CoalesceResult::NameIsCoalesceSource => {
                         // Convert `const` or `let` declarations to `var` declarations.
@@ -248,20 +257,22 @@ impl CoalesceVariableNames<'_> {
                 assert!(var_decl.decls.len() == 1);
                 let decl = var_decl.decls.first_mut().unwrap();
 
-                if let Pat::Ident(lhs) = &mut decl.name {
+                if let BindingPatOrIdent::Ident(lhs) = &mut decl.name {
                     match self.maybe_coalesce_name(&mut lhs.id) {
                         CoalesceResult::NameIsCoalesceTarget => {
                             if decl.init.is_some() {
                                 // Replace decl with assignment e.g. `let x = 0;` to `x = 0;`.
                                 let var_decl = unwrap_as!(stmt, Stmt::Decl(Decl::Var(d)), d);
                                 let decl = var_decl.decls.pop().unwrap();
-                                let name = unwrap_as!(decl.name, Pat::Ident(n), n);
+                                let name = unwrap_as!(decl.name, BindingPatOrIdent::Ident(n), n);
                                 *stmt = Stmt::Expr(ExprStmt {
                                     node_id: self.program_data.new_id_from(decl.node_id),
                                     expr: Box::new(Expr::Assign(AssignExpr {
                                         node_id: self.program_data.new_id_from(decl.node_id),
                                         op: AssignOp::Assign,
-                                        left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
+                                        left: Box::new(AssignTarget::Simple(
+                                            SimpleAssignTarget::Ident(name),
+                                        )),
                                         right: decl.init.unwrap(),
                                     })),
                                 });
@@ -309,12 +320,17 @@ impl CoalesceVariableNames<'_> {
                             let var_decl = unwrap_as!(stmt, Stmt::Decl(Decl::Var(d)), d);
                             let decl = var_decl.decls.pop().unwrap();
 
+                            let left = AssignTarget::from_binding_pat_or_ident(
+                                decl.name,
+                                self.program_data.data(),
+                            );
+
                             *stmt = Stmt::Expr(ExprStmt {
                                 node_id: self.program_data.new_id_from(decl.node_id),
                                 expr: Box::new(Expr::Assign(AssignExpr {
                                     node_id: self.program_data.new_id_from(decl.node_id),
                                     op: AssignOp::Assign,
-                                    left: PatOrExpr::Pat(Box::new(decl.name)),
+                                    left: Box::new(left),
                                     right: decl.init.unwrap(),
                                 })),
                             });
@@ -370,7 +386,7 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
             if var_decl.decls.len() == 1 {
                 let decl = var_decl.decls.first_mut().unwrap();
 
-                if let Pat::Ident(lhs) = &mut decl.name {
+                if let BindingPatOrIdent::Ident(lhs) = &mut decl.name {
                     match self.maybe_coalesce_name(&mut lhs.id) {
                         CoalesceResult::NameIsCoalesceTarget => {
                             let var_decl = unwrap_as!(
@@ -382,12 +398,14 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 
                             if let Some(init) = decl.init {
                                 // Replace decl with assignment e.g. `let x = 0;` to `x = 0;`.
-                                let name = unwrap_as!(decl.name, Pat::Ident(n), n);
+                                let name = unwrap_as!(decl.name, BindingPatOrIdent::Ident(n), n);
                                 node.init = Some(Box::new(VarDeclOrExpr::Expr(Box::new(
                                     Expr::Assign(AssignExpr {
                                         node_id: self.program_data.new_id_from(decl.node_id),
                                         op: AssignOp::Assign,
-                                        left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
+                                        left: Box::new(AssignTarget::Simple(
+                                            SimpleAssignTarget::Ident(name),
+                                        )),
                                         right: init,
                                     }),
                                 ))));
@@ -418,11 +436,16 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
                             );
                             let decl = var_decl.decls.pop().unwrap();
 
+                            let left = AssignTarget::from_binding_pat_or_ident(
+                                decl.name,
+                                self.program_data.data(),
+                            );
+
                             node.init = Some(Box::new(VarDeclOrExpr::Expr(Box::new(
                                 Expr::Assign(AssignExpr {
                                     node_id: self.program_data.new_id_from(decl.node_id),
                                     op: AssignOp::Assign,
-                                    left: PatOrExpr::Pat(Box::new(decl.name)),
+                                    left: Box::new(left),
                                     right: decl.init.unwrap(),
                                 }),
                             ))));
@@ -667,22 +690,16 @@ impl Visit<'_> for LiveRangeChecker<'_> {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        let lhs_ident = match &node.left {
-            PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-                Expr::Ident(lhs) => Some(lhs.name),
-                _ => None,
-            },
-            PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-                Pat::Ident(lhs) => Some(lhs.id.name),
-                _ => None,
-            },
+        let lhs_ident = match node.left.as_ref() {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => Some(&ident.id),
+            _ => None,
         };
         if let Some(lhs) = lhs_ident {
             node.right.visit_with(self);
             // All assign ops except for plain assigns read from the variable as
             // well as writing.
             let is_read_from = node.op != AssignOp::Assign;
-            self.visit_ident(lhs, is_read_from, true);
+            self.visit_ident(lhs.name, is_read_from, true);
         } else {
             // Evaluate the rhs of a destructuring assignment before the lhs.
             node.right.visit_with(self);
@@ -691,7 +708,7 @@ impl Visit<'_> for LiveRangeChecker<'_> {
     }
 
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
-        if let Pat::Ident(lhs) = &node.name {
+        if let BindingPatOrIdent::Ident(lhs) = &node.name {
             if node.init.is_some() {
                 node.init.visit_with(self);
                 // A var decl with an initializer assign a value to the name.\
@@ -706,10 +723,16 @@ impl Visit<'_> for LiveRangeChecker<'_> {
         }
     }
 
-    fn visit_assign_pat(&mut self, node: &AssignPat) {
+    fn visit_binding_element(&mut self, node: &'_ BindingElement) {
         // Visit RHS before LHS to match evaluation order.
-        node.right.visit_with(self);
-        node.left.visit_with(self);
+        node.init.visit_with(self);
+        node.target.visit_with(self);
+    }
+
+    fn visit_assignment_element(&mut self, node: &AssignmentElement) {
+        // Visit RHS before LHS to match evaluation order.
+        node.init.visit_with(self);
+        node.target.visit_with(self);
     }
 
     // TODO: this incorrectly assumes that the bodies of if/for etc are only

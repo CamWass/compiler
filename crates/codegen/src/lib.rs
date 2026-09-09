@@ -455,7 +455,10 @@ impl<'a> Emitter<'a> {
             Expr::Arrow(n) => self.emit_arrow_expr(n),
             Expr::Assign(n) => {
                 let needs_parens = in_expr_stmt_seq
-                    && matches!(&n.left, PatOrExpr::Pat(p) if matches!(p.as_ref(), Pat::Object(_)));
+                    && matches!(
+                        n.left.as_ref(),
+                        AssignTarget::AssignmentPat(AssignmentPat::Object(_))
+                    );
 
                 if needs_parens {
                     punct!(self, "(");
@@ -621,7 +624,6 @@ impl<'a> Emitter<'a> {
                 }
                 Ok(())
             }
-            Expr::Invalid(n) => self.emit_invalid(n),
         }?;
 
         self.flags = old_flags;
@@ -702,12 +704,6 @@ impl<'a> Emitter<'a> {
             }
         }
         Ok(())
-    }
-
-    fn emit_invalid(&mut self, n: &Invalid) -> Result {
-        let span = get_span!(self, n.node_id);
-
-        self.wr.write_str_lit(span, "<invalid>")
     }
 
     fn emit_call_expr(&mut self, node: &CallExpr, wrap_callee: bool) -> Result {
@@ -905,12 +901,15 @@ impl<'a> Emitter<'a> {
 
         let space = !self.cfg.minify
             || matches!(
-                node.params.as_slice(),
+                node.params.params.as_slice(),
                 [Param {
-                    pat: Pat::Ident(_),
+                    pat: BindingElement {
+                        target: BindingPatOrIdent::Ident(_),
+                        ..
+                    },
                     ..
                 }]
-            );
+            ) && node.params.rest_param.is_none();
 
         if node.is_async {
             keyword!(self, "async");
@@ -923,12 +922,15 @@ impl<'a> Emitter<'a> {
 
         let parens = !self.cfg.minify
             || !matches!(
-                node.params.as_slice(),
+                node.params.params.as_slice(),
                 [Param {
-                    pat: Pat::Ident(_),
+                    pat: BindingElement {
+                        target: BindingPatOrIdent::Ident(_),
+                        ..
+                    },
                     ..
                 }]
-            );
+            ) && node.params.rest_param.is_none();
 
         if parens {
             punct!(self, "(");
@@ -937,12 +939,7 @@ impl<'a> Emitter<'a> {
         let old = self.ctx;
         self.ctx = Context::Default;
 
-        self.emit_list(
-            span,
-            &node.params,
-            |e, n| e.emit_param(n),
-            ListFormat::CommaListElements,
-        )?;
+        self.emit_function_params(span, &node.params)?;
         if parens {
             punct!(self, ")");
         }
@@ -957,7 +954,7 @@ impl<'a> Emitter<'a> {
                     let needs_parens = match expr.as_ref() {
                         Expr::Seq(_) | Expr::Object(_) => true,
                         Expr::Assign(e) => {
-                            matches!(&e.left, PatOrExpr::Pat(p) if matches!(p.as_ref(), Pat::Array(_) | Pat::Object(_)))
+                            matches!(e.left.as_ref(), AssignTarget::AssignmentPat(_))
                         }
                         _ => false,
                     };
@@ -1014,22 +1011,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_assign_expr(&mut self, node: &AssignExpr) -> Result {
-        let lhs_is_member = match &node.left {
-            PatOrExpr::Expr(lhs) => {
-                matches!(lhs.as_ref(), Expr::Member(_))
-            }
-            PatOrExpr::Pat(lhs) => {
-                if let Pat::Expr(lhs) = lhs.as_ref() {
-                    matches!(lhs.as_ref(), Expr::Member(_))
-                } else {
-                    false
-                }
-            }
-        };
+        let lhs_is_member = matches!(
+            node.left.as_ref(),
+            AssignTarget::Simple(SimpleAssignTarget::Member(_))
+        );
 
         self.flags
             .set(Flags::in_assign_lhs_member_expr, lhs_is_member);
-        self.emit_pat_or_expr(&node.left)?;
+        self.emit_assign_target(&node.left)?;
         self.flags.set(Flags::in_assign_lhs_member_expr, false);
         formatting_space!(self);
         operator!(self, node.op.as_str());
@@ -1411,12 +1400,7 @@ impl<'a> Emitter<'a> {
         self.emit_prop_name(&n.key)?;
 
         punct!(self, "(");
-        self.emit_list(
-            get_span!(self, n.function.node_id),
-            &n.function.params,
-            |e, n| e.emit_param(n),
-            ListFormat::CommaListElements,
-        )?;
+        self.emit_function_params(get_span!(self, n.function.node_id), &n.function.params)?;
         punct!(self, ")");
 
         formatting_space!(self);
@@ -1475,12 +1459,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "constructor");
         punct!(self, "(");
-        self.emit_list(
-            span,
-            &n.params,
-            |e, n| e.emit_param(n),
-            ListFormat::Parameters,
-        )?;
+        self.emit_function_params(span, &n.params)?;
         punct!(self, ")");
 
         self.emit_block_stmt(&n.body)
@@ -1579,16 +1558,22 @@ impl<'a> Emitter<'a> {
     /// prints `(b){}` from `function a(b){}`
     fn emit_fn_trailing(&mut self, node: &Function) -> Result {
         punct!(self, "(");
-        self.emit_list(
-            get_span!(self, node.node_id),
-            &node.params,
-            |e, n| e.emit_param(n),
-            ListFormat::CommaListElements,
-        )?;
+        self.emit_function_params(get_span!(self, node.node_id), &node.params)?;
         punct!(self, ")");
 
         formatting_space!(self);
         self.emit_block_stmt(&node.body)
+    }
+
+    fn emit_function_params(&mut self, parent_node_span: Span, node: &FunctionParams) -> Result {
+        self.emit_list_with_extra_item(
+            parent_node_span,
+            &node.params,
+            |e, n| e.emit_param(n),
+            node.rest_param.as_ref(),
+            |e, n| e.emit_binding_rest_element(n),
+            ListFormat::CommaListElements,
+        )
     }
 
     fn emit_this_expr(&mut self, _: &ThisExpr) -> Result {
@@ -1727,9 +1712,9 @@ impl<'a> Emitter<'a> {
         if node.prefix {
             operator!(self, node.op.as_str());
             //TODO: Check if we should use should_emit_whitespace_before_operand
-            self.emit_expr(&node.arg)?;
+            self.emit_simple_assign_target(&node.arg)?;
         } else {
-            self.emit_expr(&node.arg)?;
+            self.emit_simple_assign_target(&node.arg)?;
             operator!(self, node.op.as_str());
         }
         Ok(())
@@ -1986,20 +1971,26 @@ impl<'a> Emitter<'a> {
         emit_child: impl Fn(&mut Emitter, &N) -> Result,
         format: ListFormat,
     ) -> Result {
-        self.emit_list5(parent_node, children, emit_child, format, 0, children.len())
+        self.emit_list_with_extra_item(
+            parent_node,
+            children,
+            emit_child,
+            None::<&()>,
+            |_, _| Ok(()),
+            format,
+        )
     }
 
-    #[allow(clippy::cognitive_complexity)]
-    fn emit_list5<N>(
+    fn emit_list_with_extra_item<N, E>(
         &mut self,
         parent_node: Span,
         children: &[N],
         emit_child: impl Fn(&mut Emitter, &N) -> Result,
+        extra: Option<&E>,
+        emit_extra: impl Fn(&mut Emitter, &E) -> Result,
         format: ListFormat,
-        start: usize,
-        count: usize,
     ) -> Result {
-        let is_empty = start > children.len() || count == 0;
+        let is_empty = children.is_empty() && extra.is_none();
         if is_empty && format.contains(ListFormat::OptionalIfEmpty) {
             return Ok(());
         }
@@ -2007,8 +1998,6 @@ impl<'a> Emitter<'a> {
         if format.contains(ListFormat::BracketsMask) {
             self.wr.write_punct(None, format.opening_bracket())?;
         }
-
-        // self.handlers.onBeforeEmitNodeArray(children);
 
         if is_empty {
             // Write a line terminator if the parent node was multi-line
@@ -2044,9 +2033,7 @@ impl<'a> Emitter<'a> {
             // Emit each child.
             let mut first = true;
             let mut should_decrease_indent_after_emit = false;
-            for i in 0..count {
-                let child = &children[start + i];
-
+            for child in children {
                 // Write the delimiter if this is not the first node.
                 if !first {
                     self.write_delim(format)?;
@@ -2080,6 +2067,39 @@ impl<'a> Emitter<'a> {
                 }
 
                 first = false;
+            }
+
+            if let Some(extra) = extra {
+                // Write the delimiter if this is not the first node.
+                if !first {
+                    self.write_delim(format)?;
+
+                    // Write either a line terminator or whitespace to separate the elements.
+
+                    if self.cm.should_write_separating_line_terminator(format) {
+                        // If a synthesized node in a single-line list starts on a new
+                        // line, we should increase the indent.
+                        if (format & (ListFormat::LinesMask | ListFormat::Indented))
+                            == ListFormat::SingleLine
+                            && !self.cfg.minify
+                        {
+                            self.wr.increase_indent()?;
+                            should_decrease_indent_after_emit = true;
+                        }
+
+                        if !self.cfg.minify {
+                            self.wr.write_line()?;
+                        }
+                    } else if format.contains(ListFormat::SpaceBetweenSiblings) {
+                        formatting_space!(self);
+                    }
+                }
+
+                emit_extra(self, extra)?;
+
+                if should_decrease_indent_after_emit {
+                    self.wr.decrease_indent()?;
+                }
             }
 
             // Write a trailing comma, if requested.
@@ -2128,8 +2148,6 @@ impl<'a> Emitter<'a> {
             }
         }
 
-        // self.handlers.onAfterEmitNodeArray(children);
-
         if format.contains(ListFormat::BracketsMask) {
             self.wr.write_punct(None, format.closing_bracket())?;
         }
@@ -2146,27 +2164,10 @@ impl Emitter<'_> {
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
 
-        self.emit_pat(&node.pat)?;
+        self.emit_binding_element(&node.pat)?;
         self.flags = old_flags;
         self.ctx = old;
         Ok(())
-    }
-
-    fn emit_pat(&mut self, node: &Pat) -> Result {
-        match node {
-            Pat::Array(n) => self.emit_array_pat(n),
-            Pat::Assign(n) => self.emit_assign_pat(n),
-            Pat::Expr(n) => self.emit_expr(n),
-            Pat::Ident(n) => self.emit_binding_ident(n),
-            Pat::Object(n) => self.emit_object_pat(n),
-            Pat::Rest(n) => self.emit_rest_pat(n),
-            Pat::Invalid(..) => invalid_pat(),
-        }
-    }
-
-    fn emit_rest_pat(&mut self, node: &RestPat) -> Result {
-        punct!(self, "...");
-        self.emit_pat(&node.arg)
     }
 
     fn emit_spread_element(&mut self, node: &SpreadElement) -> Result {
@@ -2178,99 +2179,252 @@ impl Emitter<'_> {
         Ok(())
     }
 
-    fn emit_pat_or_expr(&mut self, node: &PatOrExpr) -> Result {
+    fn emit_binding_element(&mut self, node: &BindingElement) -> Result {
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
+
+        self.emit_binding_pat_or_ident(&node.target)?;
+
+        if let Some(init) = &node.init {
+            formatting_space!(self);
+            punct!(self, "=");
+            formatting_space!(self);
+
+            self.emit_expr(init)?;
+        }
+
+        self.flags = old_flags;
+        Ok(())
+    }
+
+    pub fn emit_binding_pat(&mut self, node: &BindingPat) -> Result {
         match node {
-            PatOrExpr::Expr(n) => self.emit_expr(n),
-            PatOrExpr::Pat(n) => self.emit_pat(n),
+            BindingPat::Array(array_binding_pat) => self.emit_array_binding_pat(array_binding_pat),
+            BindingPat::Object(object_binding_pat) => {
+                self.emit_object_binding_pat(object_binding_pat)
+            }
         }
     }
 
-    fn emit_array_pat(&mut self, node: &ArrayPat) -> Result {
+    fn emit_array_binding_pat(&mut self, node: &ArrayBindingPat) -> Result {
         let span = get_span!(self, node.node_id);
 
         punct!(self, "[");
-        self.emit_list(
+        self.emit_list_with_extra_item(
             span,
             &node.elems,
             |e, n| {
                 if let Some(n) = n {
-                    e.emit_pat(n)
+                    e.emit_binding_element(n)
                 } else {
                     Ok(())
                 }
             },
+            node.rest.as_ref(),
+            |e, n| e.emit_binding_rest_element(n),
             ListFormat::ArrayBindingPatternElements,
         )?;
         punct!(self, "]");
         Ok(())
     }
 
-    fn emit_assign_pat(&mut self, node: &AssignPat) -> Result {
-        let old_flags = self.flags;
-        self.flags.set(Flags::in_for_stmt_head, false);
-
-        self.emit_pat(&node.left)?;
-        formatting_space!(self);
-        punct!(self, "=");
-        formatting_space!(self);
-
-        self.emit_expr(&node.right)?;
-
-        self.flags = old_flags;
-        Ok(())
+    fn emit_binding_rest_element(&mut self, node: &BindingRestElement) -> Result {
+        punct!(self, "...");
+        self.emit_binding_pat_or_ident(&node.arg)
     }
 
-    fn emit_object_pat(&mut self, node: &ObjectPat) -> Result {
+    fn emit_binding_pat_or_ident(&mut self, node: &BindingPatOrIdent) -> Result {
+        match node {
+            BindingPatOrIdent::Array(p) => self.emit_array_binding_pat(p),
+            BindingPatOrIdent::Object(p) => self.emit_object_binding_pat(p),
+            BindingPatOrIdent::Ident(p) => self.emit_binding_ident(p),
+        }
+    }
+
+    fn emit_object_binding_pat(&mut self, node: &ObjectBindingPat) -> Result {
         let span = get_span!(self, node.node_id);
 
-        let is_last_rest = matches!(node.props.last(), Some(ObjectPatProp::Rest(..)));
-        let format = if is_last_rest {
+        let format = if node.rest.is_some() {
             ListFormat::ObjectBindingPatternElements ^ ListFormat::AllowTrailingComma
         } else {
             ListFormat::ObjectBindingPatternElements
         };
 
         punct!(self, "{");
-        self.emit_list(
+        self.emit_list_with_extra_item(
             span,
             &node.props,
-            |e, n| e.emit_object_pat_prop(n),
+            |e, n| e.emit_binding_property(n),
+            node.rest.as_ref(),
+            |e, n| e.emit_binding_rest_property(n),
             format | ListFormat::CanSkipTrailingComma,
         )?;
         punct!(self, "}");
         Ok(())
     }
 
-    fn emit_object_pat_prop(&mut self, node: &ObjectPatProp) -> Result {
-        match node {
-            ObjectPatProp::KeyValue(node) => self.emit_object_kv_pat(node),
-            ObjectPatProp::Rest(node) => self.emit_rest_pat(node),
-        }
-    }
-
-    fn emit_object_kv_pat(&mut self, node: &KeyValuePatProp) -> Result {
+    fn emit_binding_property(&mut self, node: &BindingProperty) -> Result {
         if self.cfg.minify {
-            if let PropName::Ident(key) = &node.key {
+            if let PropName::Ident(key) = &node.prop {
                 // Short hand properties e.g. `{foo:foo}` => `{foo}`
-                if let Pat::Ident(value) = node.value.as_ref() {
+                if let BindingElement {
+                    target: BindingPatOrIdent::Ident(name),
+                    init: None,
+                    ..
+                } = node.target.as_ref()
+                {
                     if self.program_data.get_name_text(key.name)
-                        == self.program_data.get_name_text(value.id.name)
+                        == self.program_data.get_name_text(name.id.name)
                     {
+                        // TODO: we can just emit the target here.
                         return self.emit_ident(key);
                     }
                 }
 
                 // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
-                if let Pat::Assign(value) = node.value.as_ref() {
-                    if let Pat::Ident(lhs) = value.left.as_ref() {
-                        if self.program_data.get_name_text(lhs.id.name)
+                if let BindingElement {
+                    target: BindingPatOrIdent::Ident(name),
+                    init: Some(init),
+                    ..
+                } = node.target.as_ref()
+                {
+                    if self.program_data.get_name_text(name.id.name)
+                        == self.program_data.get_name_text(key.name)
+                    {
+                        // TODO: we can just emit the target here.
+                        self.emit_ident(key)?;
+                        punct!(self, "=");
+                        let old = self.ctx;
+                        self.ctx = Context::ForcedExpr;
+                        self.emit_expr(init)?;
+                        self.ctx = old;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        let old = self.ctx;
+        self.ctx = Context::ForcedExpr;
+        self.emit_prop_name(&node.prop)?;
+        self.ctx = old;
+
+        punct!(self, ":");
+        formatting_space!(self);
+        self.emit_binding_element(&node.target)?;
+        formatting_space!(self);
+        Ok(())
+    }
+
+    fn emit_binding_rest_property(&mut self, node: &BindingRestProperty) -> Result {
+        punct!(self, "...");
+        self.emit_binding_ident(&node.arg)
+    }
+
+    fn emit_assignment_element(&mut self, node: &AssignmentElement) -> Result {
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
+
+        self.emit_assign_target(&node.target)?;
+
+        if let Some(init) = &node.init {
+            formatting_space!(self);
+            punct!(self, "=");
+            formatting_space!(self);
+
+            self.emit_expr(init)?;
+        }
+
+        self.flags = old_flags;
+        Ok(())
+    }
+
+    fn emit_array_assignment_pat(&mut self, node: &ArrayAssignmentPat) -> Result {
+        let span = get_span!(self, node.node_id);
+
+        punct!(self, "[");
+        self.emit_list_with_extra_item(
+            span,
+            &node.elems,
+            |e, n| {
+                if let Some(n) = n {
+                    e.emit_assignment_element(n)
+                } else {
+                    Ok(())
+                }
+            },
+            node.rest.as_ref(),
+            |e, n| e.emit_assignment_rest(n),
+            ListFormat::ArrayBindingPatternElements,
+        )?;
+        punct!(self, "]");
+        Ok(())
+    }
+
+    fn emit_assignment_rest(&mut self, node: &AssignmentRest) -> Result {
+        punct!(self, "...");
+        self.emit_assign_target(&node.arg)
+    }
+
+    fn emit_object_assignment_pat(&mut self, node: &ObjectAssignmentPat) -> Result {
+        let span = get_span!(self, node.node_id);
+
+        let format = if node.rest.is_some() {
+            ListFormat::ObjectBindingPatternElements ^ ListFormat::AllowTrailingComma
+        } else {
+            ListFormat::ObjectBindingPatternElements
+        };
+
+        punct!(self, "{");
+        self.emit_list_with_extra_item(
+            span,
+            &node.props,
+            |e, n| e.emit_assignment_property(n),
+            node.rest.as_ref(),
+            |e, n| e.emit_assignment_rest(n),
+            format | ListFormat::CanSkipTrailingComma,
+        )?;
+        punct!(self, "}");
+        Ok(())
+    }
+
+    fn emit_assignment_property(&mut self, node: &AssignmentProperty) -> Result {
+        if self.cfg.minify {
+            if let PropName::Ident(key) = &node.prop {
+                // Short hand properties e.g. `{foo:foo}` => `{foo}`
+                if let AssignmentElement {
+                    target, init: None, ..
+                } = &node.target
+                {
+                    if let AssignTarget::Simple(SimpleAssignTarget::Ident(target)) = target.as_ref()
+                    {
+                        if self.program_data.get_name_text(key.name)
+                            == self.program_data.get_name_text(target.id.name)
+                        {
+                            // TODO: we can just emit the target here.
+                            return self.emit_ident(key);
+                        }
+                    }
+                }
+
+                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
+                if let AssignmentElement {
+                    target,
+                    init: Some(init),
+                    ..
+                } = &node.target
+                {
+                    if let AssignTarget::Simple(SimpleAssignTarget::Ident(target)) = target.as_ref()
+                    {
+                        if self.program_data.get_name_text(target.id.name)
                             == self.program_data.get_name_text(key.name)
                         {
+                            // TODO: we can just emit the target here.
                             self.emit_ident(key)?;
                             punct!(self, "=");
                             let old = self.ctx;
                             self.ctx = Context::ForcedExpr;
-                            self.emit_expr(&value.right)?;
+                            self.emit_expr(init)?;
                             self.ctx = old;
                             return Ok(());
                         }
@@ -2281,20 +2435,45 @@ impl Emitter<'_> {
 
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        self.emit_prop_name(&node.key)?;
+        self.emit_prop_name(&node.prop)?;
         self.ctx = old;
 
         punct!(self, ":");
         formatting_space!(self);
-        self.emit_pat(&node.value)?;
+        self.emit_assignment_element(&node.target)?;
         formatting_space!(self);
         Ok(())
     }
 
-    fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrPat) -> Result {
+    fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrAssignTarget) -> Result {
         match node {
-            VarDeclOrPat::Pat(n) => self.emit_pat(n),
-            VarDeclOrPat::VarDecl(n) => self.emit_var_decl(n),
+            VarDeclOrAssignTarget::VarDecl(var_decl) => self.emit_var_decl(var_decl),
+            VarDeclOrAssignTarget::AssignTarget(assign_target) => {
+                self.emit_assign_target(assign_target)
+            }
+        }
+    }
+
+    fn emit_assign_target(&mut self, node: &AssignTarget) -> Result {
+        match node {
+            AssignTarget::Simple(simple_assign_target) => {
+                self.emit_simple_assign_target(simple_assign_target)
+            }
+            AssignTarget::AssignmentPat(assignment_pat) => match assignment_pat {
+                AssignmentPat::Array(array_assignment_pat) => {
+                    self.emit_array_assignment_pat(array_assignment_pat)
+                }
+                AssignmentPat::Object(object_assignment_pat) => {
+                    self.emit_object_assignment_pat(object_assignment_pat)
+                }
+            },
+        }
+    }
+
+    fn emit_simple_assign_target(&mut self, node: &SimpleAssignTarget) -> Result {
+        match node {
+            SimpleAssignTarget::Ident(binding_ident) => self.emit_binding_ident(binding_ident),
+            SimpleAssignTarget::Member(member_expr) => self.emit_member_expr(member_expr),
         }
     }
 }
@@ -2396,10 +2575,10 @@ impl Emitter<'_> {
         let needs_parens = match e.expr.as_ref() {
             Expr::Object(..) | Expr::Class(..) | Expr::Fn(..) => true,
             // ({ a } = foo)
-            Expr::Assign(AssignExpr {
-                left: PatOrExpr::Pat(left),
-                ..
-            }) => matches!(left.as_ref(), Pat::Object(_)),
+            Expr::Assign(assign_pat) => matches!(
+                assign_pat.left.as_ref(),
+                AssignTarget::AssignmentPat(AssignmentPat::Object(_))
+            ),
             Expr::Seq(_) => {
                 self.flags.set(Flags::in_expr_stmt_seq, true);
                 false
@@ -2573,7 +2752,7 @@ impl Emitter<'_> {
 
         if let Some(param) = &node.param {
             punct!(self, "(");
-            self.emit_pat(param)?;
+            self.emit_binding_pat_or_ident(param)?;
             punct!(self, ")");
         }
 
@@ -2732,21 +2911,12 @@ impl Emitter<'_> {
         let mut await_ident = false;
 
         if !node.is_await {
-            if let VarDeclOrPat::Pat(p) = node.left.as_ref() {
-                match p {
-                    Pat::Ident(ident) => {
-                        if ident.id.name == id_for_built_in!("async") {
-                            await_ident = true;
-                        }
-                    }
-                    Pat::Expr(expr) => {
-                        if let Expr::Ident(ident) = expr.as_ref() {
-                            if ident.name == id_for_built_in!("async") {
-                                await_ident = true;
-                            }
-                        }
-                    }
-                    _ => {}
+            if let VarDeclOrAssignTarget::AssignTarget(AssignTarget::Simple(
+                SimpleAssignTarget::Ident(ident),
+            )) = node.left.as_ref()
+            {
+                if ident.id.name == id_for_built_in!("async") {
+                    await_ident = true;
                 }
             }
         }
@@ -3388,12 +3558,6 @@ fn minify_number(num: f64) -> String {
 
 fn clz(s: &str) -> usize {
     s.as_bytes().iter().take_while(|&&c| c == b'0').count()
-}
-
-#[cold]
-#[inline(never)]
-fn invalid_pat() -> ! {
-    unimplemented!("emit Pat::Invalid")
 }
 
 // TODO: this exists for tests to undo the automatic block insertion that the

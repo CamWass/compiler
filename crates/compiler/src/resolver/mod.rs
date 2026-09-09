@@ -112,7 +112,7 @@ impl VisitMut<'_> for Resolver<'_> {
         node.name.visit_mut_with(self);
         self.in_decl = old;
     }
-    fn visit_mut_param(&mut self, node: &mut Param) {
+    fn visit_mut_function_params(&mut self, node: &mut FunctionParams) {
         let old = self.in_decl;
         self.in_decl = true;
         node.visit_mut_children_with(self);
@@ -305,7 +305,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                     match decl.kind {
                         VarDeclKind::Var => {
                             for decl in &mut decl.decls {
-                                find_pat_ids(&mut decl.name, op);
+                                find_ids_in_binding_pat_or_ident(&mut decl.name, op);
                             }
                         }
                         VarDeclKind::Let | VarDeclKind::Const => {}
@@ -317,11 +317,11 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                 .for_each(|s| hoist_declarations(s, op));
         }
         Stmt::ForIn(ForInStmt { body, left, .. }) | Stmt::ForOf(ForOfStmt { body, left, .. }) => {
-            if let VarDeclOrPat::VarDecl(decl) = left.as_mut() {
+            if let VarDeclOrAssignTarget::VarDecl(decl) = left.as_mut() {
                 match decl.kind {
                     VarDeclKind::Var => {
                         for decl in &mut decl.decls {
-                            find_pat_ids(&mut decl.name, op);
+                            find_ids_in_binding_pat_or_ident(&mut decl.name, op);
                         }
                     }
                     VarDeclKind::Let | VarDeclKind::Const => {}
@@ -370,7 +370,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
             Decl::Var(decl) => match decl.kind {
                 VarDeclKind::Var => {
                     for decl in &mut decl.decls {
-                        find_pat_ids(&mut decl.name, op);
+                        find_ids_in_binding_pat_or_ident(&mut decl.name, op);
                     }
                 }
                 VarDeclKind::Let | VarDeclKind::Const => {}
@@ -387,31 +387,26 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
     }
 }
 
-fn find_pat_ids(pat: &mut Pat, op: &mut impl FnMut(&mut NameId)) {
+fn find_ids_in_binding_pat_or_ident(pat: &mut BindingPatOrIdent, op: &mut impl FnMut(&mut NameId)) {
     match pat {
-        Pat::Ident(ident) => {
-            op(&mut ident.id.name);
-        }
-        Pat::Array(array) => {
+        BindingPatOrIdent::Array(array) => {
             for el in &mut array.elems {
                 if let Some(el) = el {
-                    find_pat_ids(el, op);
+                    find_ids_in_binding_pat_or_ident(&mut el.target, op);
                 }
             }
+            if let Some(rest) = &mut array.rest {
+                find_ids_in_binding_pat_or_ident(&mut rest.arg, op);
+            }
         }
-        Pat::Rest(rest) => find_pat_ids(&mut rest.arg, op),
-        Pat::Object(object) => {
+        BindingPatOrIdent::Object(object) => {
             for prop in &mut object.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv_prop) => find_pat_ids(&mut kv_prop.value, op),
-                    ObjectPatProp::Rest(rest) => find_pat_ids(&mut rest.arg, op),
-                }
+                find_ids_in_binding_pat_or_ident(&mut prop.target.target, op);
+            }
+            if let Some(rest) = &mut object.rest {
+                op(&mut rest.arg.id.name);
             }
         }
-        Pat::Assign(assign) => find_pat_ids(&mut assign.left, op),
-
-        Pat::Expr(_) => {}
-
-        Pat::Invalid(_) => unreachable!(),
+        BindingPatOrIdent::Ident(ident) => op(&mut ident.id.name),
     }
 }

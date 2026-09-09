@@ -51,7 +51,7 @@ define!({
     }
     pub struct Constructor {
         pub node_id: NodeId,
-        pub params: Vec<Param>,
+        pub params: FunctionParams,
         pub body: BlockStmt,
     }
     pub enum MethodKind {
@@ -86,7 +86,7 @@ define!({
     }
     pub struct VarDeclarator {
         pub node_id: NodeId,
-        pub name: Pat,
+        pub name: BindingPatOrIdent,
         pub init: Option<Box<Expr>>,
     }
     pub enum Expr {
@@ -114,7 +114,6 @@ define!({
         Await(AwaitExpr),
         PrivateName(PrivateName),
         OptChain(OptChainExpr),
-        Invalid(Invalid),
     }
     pub struct ThisExpr {
         pub node_id: NodeId,
@@ -140,7 +139,7 @@ define!({
         pub node_id: NodeId,
         pub op: UpdateOp,
         pub prefix: bool,
-        pub arg: Box<Expr>,
+        pub arg: Box<SimpleAssignTarget>,
     }
     pub struct BinExpr {
         pub node_id: NodeId,
@@ -161,7 +160,7 @@ define!({
     pub struct AssignExpr {
         pub node_id: NodeId,
         pub op: AssignOp,
-        pub left: PatOrExpr,
+        pub left: Box<AssignTarget>,
         pub right: Box<Expr>,
     }
     pub struct MemberExpr {
@@ -192,7 +191,7 @@ define!({
     }
     pub struct ArrowExpr {
         pub node_id: NodeId,
-        pub params: Vec<Param>,
+        pub params: FunctionParams,
         pub body: BlockStmt,
         pub is_async: bool,
     }
@@ -239,9 +238,13 @@ define!({
         Spread(SpreadElement),
         Expr(Box<Expr>),
     }
-    pub enum PatOrExpr {
-        Expr(Box<Expr>),
-        Pat(Box<Pat>),
+    pub enum AssignTarget {
+        Simple(SimpleAssignTarget),
+        AssignmentPat(AssignmentPat),
+    }
+    pub enum SimpleAssignTarget {
+        Ident(BindingIdent),
+        Member(MemberExpr),
     }
     pub struct OptChainExpr {
         pub node_id: NodeId,
@@ -253,13 +256,17 @@ define!({
     }
     pub struct Function {
         pub node_id: NodeId,
-        pub params: Vec<Param>,
+        pub params: FunctionParams,
         pub body: BlockStmt,
         pub flags: FnFlags,
     }
     pub struct Param {
         pub node_id: NodeId,
-        pub pat: Pat,
+        pub pat: BindingElement,
+    }
+    pub struct FunctionParams {
+        pub params: Vec<Param>,
+        pub rest_param: Option<BindingRestElement>,
     }
 
     pub struct BindingIdent {
@@ -276,9 +283,6 @@ define!({
         pub id: Ident,
     }
 
-    pub struct Invalid {
-        pub node_id: NodeId,
-    }
     pub enum Lit {
         Str(Str),
         Bool(Bool),
@@ -462,40 +466,70 @@ define!({
         Void,
         Delete,
     }
-    pub enum Pat {
+    pub enum BindingPat {
+        Array(ArrayBindingPat),
+        Object(ObjectBindingPat),
+    }
+    pub struct ArrayBindingPat {
+        pub node_id: NodeId,
+        pub elems: Vec<Option<BindingElement>>,
+        pub rest: Option<BindingRestElement>,
+    }
+    pub struct ObjectBindingPat {
+        pub node_id: NodeId,
+        pub props: Vec<BindingProperty>,
+        pub rest: Option<BindingRestProperty>,
+    }
+    pub struct BindingProperty {
+        pub node_id: NodeId,
+        pub prop: PropName,
+        pub target: Box<BindingElement>,
+    }
+    pub struct BindingRestProperty {
+        pub node_id: NodeId,
+        pub arg: Box<BindingIdent>,
+    }
+    pub struct BindingRestElement {
+        pub node_id: NodeId,
+        pub arg: Box<BindingPatOrIdent>,
+    }
+    pub struct BindingElement {
+        pub node_id: NodeId,
+        pub target: BindingPatOrIdent,
+        pub init: Option<Box<Expr>>,
+    }
+    pub enum BindingPatOrIdent {
+        Array(ArrayBindingPat),
+        Object(ObjectBindingPat),
         Ident(BindingIdent),
-        Array(ArrayPat),
-        Rest(RestPat),
-        Object(ObjectPat),
-        Assign(AssignPat),
-        Invalid(Invalid),
-        Expr(Box<Expr>),
     }
-    pub struct ArrayPat {
+    pub enum AssignmentPat {
+        Array(ArrayAssignmentPat),
+        Object(ObjectAssignmentPat),
+    }
+    pub struct ArrayAssignmentPat {
         pub node_id: NodeId,
-        pub elems: Vec<Option<Pat>>,
+        pub elems: Vec<Option<AssignmentElement>>,
+        pub rest: Option<AssignmentRest>,
     }
-    pub struct ObjectPat {
+    pub struct ObjectAssignmentPat {
         pub node_id: NodeId,
-        pub props: Vec<ObjectPatProp>,
+        pub props: Vec<AssignmentProperty>,
+        pub rest: Option<AssignmentRest>,
     }
-    pub struct AssignPat {
+    pub struct AssignmentProperty {
         pub node_id: NodeId,
-        pub left: Box<Pat>,
-        pub right: Box<Expr>,
+        pub prop: PropName,
+        pub target: AssignmentElement,
     }
-    pub struct RestPat {
+    pub struct AssignmentRest {
         pub node_id: NodeId,
-        pub arg: Box<Pat>,
+        pub arg: Box<AssignTarget>,
     }
-    pub enum ObjectPatProp {
-        KeyValue(KeyValuePatProp),
-        Rest(RestPat),
-    }
-    pub struct KeyValuePatProp {
+    pub struct AssignmentElement {
         pub node_id: NodeId,
-        pub key: PropName,
-        pub value: Box<Pat>,
+        pub target: Box<AssignTarget>,
+        pub init: Option<Box<Expr>>,
     }
     pub enum Prop {
         KeyValue(KeyValueProp),
@@ -647,14 +681,14 @@ define!({
     }
     pub struct ForInStmt {
         pub node_id: NodeId,
-        pub left: Box<VarDeclOrPat>,
+        pub left: Box<VarDeclOrAssignTarget>,
         pub right: Box<Expr>,
         pub body: Box<BlockStmt>,
     }
     pub struct ForOfStmt {
         pub node_id: NodeId,
         pub is_await: bool,
-        pub left: Box<VarDeclOrPat>,
+        pub left: Box<VarDeclOrAssignTarget>,
         pub right: Box<Expr>,
         pub body: Box<BlockStmt>,
     }
@@ -665,12 +699,12 @@ define!({
     }
     pub struct CatchClause {
         pub node_id: NodeId,
-        pub param: Option<Pat>,
+        pub param: Option<BindingPatOrIdent>,
         pub body: BlockStmt,
     }
-    pub enum VarDeclOrPat {
+    pub enum VarDeclOrAssignTarget {
         VarDecl(VarDecl),
-        Pat(Pat),
+        AssignTarget(AssignTarget),
     }
     pub enum VarDeclOrExpr {
         VarDecl(VarDecl),

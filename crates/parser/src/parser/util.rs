@@ -36,54 +36,6 @@ impl Drop for WithCtx<'_, '_> {
     }
 }
 
-/// "IsValidSimpleAssignmentTarget" from spec.
-pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -> bool {
-    match expr {
-        Expr::Ident(Ident { name, .. }) => {
-            if strict == YesMaybe::Yes
-                && (*name == id_for_built_in!("arguments") || *name == id_for_built_in!("eval"))
-            {
-                return false;
-            }
-            true
-        }
-
-        Expr::This(..)
-        | Expr::Lit(..)
-        | Expr::Array(..)
-        | Expr::Object(..)
-        | Expr::Fn(..)
-        | Expr::Class(..)
-        | Expr::Tpl(..)
-        | Expr::TaggedTpl(..) => false,
-
-        Expr::Member(..) => true,
-
-        Expr::New(..) | Expr::Call(..) => false,
-        // TODO: Spec only mentions `new.target`
-        Expr::MetaProp(..) => false,
-
-        Expr::Update(..) => false,
-
-        Expr::Unary(..) | Expr::Await(..) => false,
-
-        Expr::Bin(..) => false,
-
-        Expr::Cond(..) => false,
-
-        Expr::Yield(..) | Expr::Arrow(..) | Expr::Assign(..) => false,
-
-        Expr::Seq(..) => false,
-
-        // MemberExpression is valid assignment target
-        Expr::PrivateName(..) => false,
-
-        Expr::OptChain(..) => false,
-
-        Expr::Invalid(..) => false,
-    }
-}
-
 impl<'d> Parser<'d> {
     pub(super) fn assert_and_bump(&mut self, token: Token) {
         debug_assert!(

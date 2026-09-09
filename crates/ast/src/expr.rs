@@ -1,11 +1,12 @@
 use crate::{
-    GetNodeId, Invalid, NodeId, Param,
+    ArrayAssignmentPat, BindingIdent, BindingPatOrIdent, FunctionParams, GetNodeId, NodeId,
+    ObjectAssignmentPat, ProgramData,
     class::Class,
     function::Function,
     ident::{Ident, PrivateName},
-    lit::{Bool, Lit, Number, Str},
+    lit::Lit,
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
-    pat::Pat,
+    pat::AssignmentPat,
     prop::Prop,
     stmt::BlockStmt,
 };
@@ -67,15 +68,11 @@ pub enum Expr {
     PrivateName(PrivateName),
 
     OptChain(OptChainExpr),
-
-    Invalid(Invalid),
 }
 
 impl Take for Expr {
     fn dummy() -> Self {
-        Self::Invalid(Invalid {
-            node_id: NodeId::DUMMY,
-        })
+        Expr::Ident(Ident::dummy())
     }
 }
 
@@ -123,7 +120,7 @@ pub struct UpdateExpr {
 
     pub prefix: bool,
 
-    pub arg: Box<Expr>,
+    pub arg: Box<SimpleAssignTarget>,
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -161,7 +158,7 @@ pub struct AssignExpr {
 
     pub op: AssignOp,
 
-    pub left: PatOrExpr,
+    pub left: Box<AssignTarget>,
 
     pub right: Box<Expr>,
 }
@@ -217,7 +214,7 @@ pub struct SeqExpr {
 pub struct ArrowExpr {
     pub node_id: NodeId,
 
-    pub params: Vec<Param>,
+    pub params: FunctionParams,
 
     pub body: BlockStmt,
 
@@ -313,27 +310,38 @@ pub enum ExprOrSpread {
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
-pub enum PatOrExpr {
-    Expr(Box<Expr>),
-    Pat(Box<Pat>),
+pub enum AssignTarget {
+    Simple(SimpleAssignTarget),
+    AssignmentPat(AssignmentPat),
 }
 
-impl From<Bool> for Expr {
-    fn from(v: Bool) -> Self {
-        Expr::Lit(Lit::Bool(v))
+impl AssignTarget {
+    pub fn from_binding_pat_or_ident(
+        binding_pat_or_ident: BindingPatOrIdent,
+        program_data: &mut ProgramData,
+    ) -> Self {
+        match binding_pat_or_ident {
+            BindingPatOrIdent::Array(array_binding_pat) => {
+                AssignTarget::AssignmentPat(AssignmentPat::Array(
+                    ArrayAssignmentPat::from_array_binding_pat(array_binding_pat, program_data),
+                ))
+            }
+            BindingPatOrIdent::Object(object_binding_pat) => {
+                AssignTarget::AssignmentPat(AssignmentPat::Object(
+                    ObjectAssignmentPat::from_object_binding_pat(object_binding_pat, program_data),
+                ))
+            }
+            BindingPatOrIdent::Ident(binding_ident) => {
+                AssignTarget::Simple(SimpleAssignTarget::Ident(binding_ident))
+            }
+        }
     }
 }
 
-impl From<Number> for Expr {
-    fn from(v: Number) -> Self {
-        Expr::Lit(Lit::Num(v))
-    }
-}
-
-impl From<Str> for Expr {
-    fn from(v: Str) -> Self {
-        Expr::Lit(Lit::Str(v))
-    }
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+pub enum SimpleAssignTarget {
+    Ident(BindingIdent),
+    Member(MemberExpr),
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

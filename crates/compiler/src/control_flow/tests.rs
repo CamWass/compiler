@@ -62,6 +62,7 @@ struct SimpleEdge {
     target: SimpleNode,
 }
 
+// TODO: we can probably remove a bunch of these:
 make!(
     // class
     Class,
@@ -108,8 +109,6 @@ make!(
     BindingIdent,
     Ident,
     PrivateName,
-    //lib
-    Invalid,
     // Lit
     Str,
     Bool,
@@ -133,12 +132,6 @@ make!(
     //module
     Script,
     Module,
-    //pat
-    ArrayPat,
-    ObjectPat,
-    AssignPat,
-    RestPat,
-    KeyValuePatProp,
     //prop
     KeyValueProp,
     AssignProp,

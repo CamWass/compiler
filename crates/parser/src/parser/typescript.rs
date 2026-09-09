@@ -1227,11 +1227,9 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn try_parse_ts_tuple_element_name(&mut self) -> Option<Pat> {
+    fn try_parse_ts_tuple_element_name(&mut self) {
         self.try_parse_ts(|p| {
-            let start = p.input.cur_pos();
-
-            let rest = p.eat(tok!("..."));
+            p.eat(tok!("..."));
 
             let ident = p.parse_ident_name()?;
             if p.eat(tok!('?')) {
@@ -1240,15 +1238,8 @@ impl Parser<'_> {
             }
             expect!(p, ':');
 
-            Ok(Some(if rest {
-                Pat::Rest(RestPat {
-                    node_id: node_id!(p, p.span(start)),
-                    arg: Box::new(Pat::Ident(BindingIdent::from_ident(ident))),
-                })
-            } else {
-                Pat::Ident(BindingIdent::from_ident(ident))
-            }))
-        })
+            Ok(Some(()))
+        });
     }
 
     /// `tsParseTupleElementType`
@@ -1354,19 +1345,18 @@ impl Parser<'_> {
 
         let params = self.parse_formal_params()?;
 
-        let mut count: usize = 0;
+        let mut count: usize = if params.rest_param.is_some() { 1 } else { 0 };
 
-        for param in params {
-            match param.pat {
-                Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) | Pat::Rest(_) => {
-                    count += 1;
-                }
-                _ => unexpected!(
+        for param in params.params {
+            if param.pat.init.is_none() {
+                count += 1;
+            } else {
+                unexpected!(
                     self,
                     "an identifier, [ for an array pattern, { for an object patter or ... for a \
                      rest pattern"
-                ),
-            };
+                );
+            }
         }
         expect!(self, ')');
         Ok(count)

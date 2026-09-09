@@ -52,10 +52,10 @@ impl Emitter<'_> {
             keyword!(self, span, node.kind.as_str());
         }
 
-        let starts_with_ident = !matches!(
+        let starts_with_ident = matches!(
             node.decls.first(),
             Some(VarDeclarator {
-                name: Pat::Array(..) | Pat::Rest(..) | Pat::Object(..),
+                name: BindingPatOrIdent::Ident(_),
                 ..
             })
         );
@@ -74,7 +74,7 @@ impl Emitter<'_> {
     }
 
     fn emit_var_declarator(&mut self, node: &VarDeclarator) -> Result {
-        self.emit_pat(&node.name)?;
+        self.emit_binding_pat_or_ident(&node.name)?;
 
         if let Some(init) = &node.init {
             formatting_space!(self);

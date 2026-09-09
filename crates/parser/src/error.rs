@@ -105,7 +105,6 @@ pub(super) enum SyntaxError {
     EmptyParenExpr,
     InvalidPat,
     InvalidExpr,
-    NotSimpleAssign,
     ExpectedIdent,
     DuplicateLabel(String),
     // AsyncGenerator,
@@ -137,8 +136,6 @@ pub(super) enum SyntaxError {
     DynamicImport,
 
     ExportDefaultWithOutFrom,
-
-    DotsWithoutIdentifier,
 
     NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
 
@@ -191,7 +188,6 @@ pub(super) enum SyntaxError {
     TS2427,
     TS2452,
     TS2483,
-    TS2491,
     TS2703,
     TS4112,
     TSTypeAnnotationAfterAssign,
@@ -316,8 +312,6 @@ impl SyntaxError {
             SyntaxError::EmptyParenExpr => "Parenthesized expression cannot be empty".into(),
             SyntaxError::InvalidPat => "Not a pattern".into(),
             SyntaxError::InvalidExpr => "Not an expression".into(),
-            // TODO
-            SyntaxError::NotSimpleAssign => "Cannot assign to this".into(),
             SyntaxError::ExpectedIdent => "Expected ident".into(),
             SyntaxError::DuplicateLabel(label) => {
                 format!("Label {label} is already declared").into()
@@ -374,10 +368,6 @@ impl SyntaxError {
             }
             SyntaxError::ExportDefaultWithOutFrom => {
                 "export default statements required from '...';".into()
-            }
-
-            SyntaxError::DotsWithoutIdentifier => {
-                "`...` must be followed by an identifier in declaration contexts".into()
             }
 
             SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits => {
@@ -495,9 +485,6 @@ impl SyntaxError {
             SyntaxError::TS2483 => {
                 "The left-hand side of a 'for...of' statement cannot use a type annotation".into()
             }
-            SyntaxError::TS2491 => "The left-hand side of a 'for...in' statement cannot be a \
-                                    destructuring pattern"
-                .into(),
             SyntaxError::TS4112 => "This member cannot have an 'override' modifier because its \
                                     containing class does not extend another class."
                 .into(),

@@ -1526,6 +1526,7 @@ where
         );
     }
 
+    // TODO: we can probably remove a bunch of these:
     generate_visitors!([
         // [visit_class, Class],
         [visit_extends_clause, ExtendsClause],
@@ -1567,7 +1568,6 @@ where
         [visit_binding_ident, BindingIdent],
         [visit_ident, Ident],
         [visit_private_name, PrivateName],
-        [visit_invalid, Invalid],
         [visit_big_int, BigInt],
         [visit_str, Str],
         [visit_bool, Bool],
@@ -1588,11 +1588,6 @@ where
         [visit_export_namespace_specifier, ExportNamespaceSpecifier],
         [visit_export_default_specifier, ExportDefaultSpecifier],
         [visit_export_named_specifier, ExportNamedSpecifier],
-        [visit_array_pat, ArrayPat],
-        [visit_object_pat, ObjectPat],
-        [visit_assign_pat, AssignPat],
-        [visit_rest_pat, RestPat],
-        [visit_key_value_pat_prop, KeyValuePatProp],
         [visit_key_value_prop, KeyValueProp],
         // [visit_getter_prop, GetterProp],
         // [visit_setter_prop, SetterProp],

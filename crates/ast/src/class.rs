@@ -1,10 +1,6 @@
 use crate::{
-    GetNodeId, NodeId,
-    expr::Expr,
-    function::{Function, Param},
-    ident::PrivateName,
-    prop::PropName,
-    stmt::BlockStmt,
+    FunctionParams, GetNodeId, NodeId, expr::Expr, function::Function, ident::PrivateName,
+    prop::PropName, stmt::BlockStmt,
 };
 use clone_node::CloneNode;
 use node_eq::NodeEq;
@@ -78,7 +74,7 @@ pub struct PrivateMethod {
 pub struct Constructor {
     pub node_id: NodeId,
 
-    pub params: Vec<Param>,
+    pub params: FunctionParams,
     pub body: BlockStmt,
 }
 

@@ -1,4 +1,4 @@
-use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
+use super::*;
 use crate::{context::ContextFlags, parser::identifier::PrivateNameOrIdentifier};
 use common::Pos;
 use util::AssignProps;
@@ -152,35 +152,9 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         if let Some(op) = self.input.cur().as_assign_op() {
             let left = if op == AssignOp::Assign {
-                self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
-                    .map(Box::new)
-                    .map(PatOrExpr::Pat)?
+                self.reparse_expr_as_assign_target(cond.unwrap())
             } else {
-                //It is an early Reference Error if IsValidSimpleAssignmentTarget of
-                // LeftHandSideExpression is false.
-                if !self.input.syntax().typescript()
-                    && !is_valid_simple_assignment_target(cond.inner(), self.ctx().strict)
-                {
-                    self.emit_err(
-                        get_span!(self, cond.node_id()),
-                        SyntaxError::NotSimpleAssign,
-                    );
-                }
-                let is_eval_or_arguments = match &cond {
-                    MaybeParen::Expr(cond) => match cond.as_ref() {
-                        Expr::Ident(i) => {
-                            i.name == id_for_built_in!("eval")
-                                || i.name == id_for_built_in!("arguments")
-                        }
-                        _ => false,
-                    },
-                    MaybeParen::Wrapped(_) => false,
-                };
-                if self.input.syntax().typescript() && is_eval_or_arguments {
-                    self.emit_strict_mode_err(get_span!(self, cond.node_id()), SyntaxError::TS1100);
-                }
-
-                PatOrExpr::Expr(cond.unwrap())
+                AssignTarget::Simple(self.reparse_expr_as_simple_assign_target(cond.unwrap()))
             };
 
             self.input.bump();
@@ -188,7 +162,7 @@ impl Parser<'_> {
             Ok(Box::new(Expr::Assign(AssignExpr {
                 node_id: node_id!(self, self.span(start)),
                 op,
-                left,
+                left: Box::new(left),
                 right,
             }))
             .into())
@@ -392,10 +366,15 @@ impl Parser<'_> {
                 && !self.input.cur().is_reserved_word(ctx)
             {
                 // async a => body
-                let arg = self
-                    .parse_binding_ident()
-                    .map(|i| Pat::Ident(BindingIdent::from_ident(i)))?;
-                let params = vec![Param::from_pat(arg, program_data!(self).data())];
+                let arg = self.parse_binding_ident().map(|i| BindingElement {
+                    node_id: node_id_from!(self, i.node_id),
+                    target: BindingPatOrIdent::Ident(BindingIdent::from_ident(i)),
+                    init: None,
+                })?;
+                let params = FunctionParams {
+                    params: vec![Param::from_pat(arg, program_data!(self).data())],
+                    rest_param: None,
+                };
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
                 let body = self.make_arrow_fn_block(body);
@@ -411,8 +390,15 @@ impl Parser<'_> {
                 && !self.input.had_line_break_before_cur()
                 && self.eat(tok!("=>"))
             {
-                let pat = Pat::Ident(BindingIdent::from_ident(id));
-                let params = vec![Param::from_pat(pat, program_data!(self).data())];
+                let pat = BindingElement {
+                    node_id: node_id_from!(self, id.node_id),
+                    target: BindingPatOrIdent::Ident(BindingIdent::from_ident(id)),
+                    init: None,
+                };
+                let params = FunctionParams {
+                    params: vec![Param::from_pat(pat, program_data!(self).data())],
+                    rest_param: None,
+                };
                 let body = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
 
@@ -976,9 +962,9 @@ impl Parser<'_> {
                     MaybeParenExprOrSpread::Expr(expr) => (expr, None),
                 };
 
-                let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, expr.unwrap())?;
-
                 if let Some(span) = spread {
+                    let pat = self.reparse_expr_as_binding_pat_or_ident(*expr.unwrap());
+
                     if let Some(rest_span) = rest_span {
                         if self.syntax().early_errors() {
                             // Rest pattern must be last one.
@@ -986,51 +972,37 @@ impl Parser<'_> {
                         }
                     }
                     rest_span = Some(span);
-                    pat = Pat::Rest(RestPat {
+                    self.try_parse_ts_type_ann()?;
+
+                    let rest = BindingRestElement {
                         node_id: node_id!(self, self.span(pat_start)),
                         arg: Box::new(pat),
-                    });
-                }
-                match &pat {
-                    Pat::Ident(BindingIdent {
-                        id: Ident { node_id, .. },
-                        ..
-                    })
-                    | Pat::Array(ArrayPat { node_id, .. })
-                    | Pat::Assign(AssignPat { node_id, .. })
-                    | Pat::Object(ObjectPat { node_id, .. })
-                    | Pat::Rest(RestPat { node_id, .. }) => {
-                        let new_type_ann = self.try_parse_ts_type_ann()?;
-                        if new_type_ann.is_some() {
-                            let hi = self.input.prev_span().hi;
-                            set_span!(self, *node_id, Span::new(pat_start, hi));
-                        }
+                    };
+
+                    items.push(MaybeParenPatOrExprOrSpread::BindingRestElement(rest));
+                } else {
+                    let mut pat = self.reparse_expr_as_binding_element(expr.unwrap());
+
+                    let new_type_ann = self.try_parse_ts_type_ann()?;
+                    if new_type_ann.is_some() {
+                        let hi = self.input.prev_span().hi;
+                        set_span!(self, pat.node_id(), Span::new(pat_start, hi));
                     }
-                    Pat::Expr(_) => unreachable!("invalid pattern: Expr"),
-                    Pat::Invalid(..) => {
-                        // We don't have to panic here.
-                        // See: https://github.com/swc-project/swc/issues/1170
-                        //
-                        // Also, as an exact error is added to the errors while
-                        // creating `Invalid`, we don't have to emit a new
-                        // error.
+
+                    if self.eat(tok!('=')) {
+                        let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+                        // TODO: explain why there shouldn't be any existing
+                        // init for these pats (type ann must come before
+                        // default value).
+                        pat.init = Some(right);
                     }
-                }
 
-                if self.eat(tok!('=')) {
-                    let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
-                    pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self, self.span(pat_start)),
-                        left: Box::new(pat),
-                        right,
-                    });
-                }
+                    if has_modifier {
+                        self.emit_err(self.span(modifier_start), SyntaxError::TS2369);
+                    }
 
-                if has_modifier {
-                    self.emit_err(self.span(modifier_start), SyntaxError::TS2369);
+                    items.push(MaybeParenPatOrExprOrSpread::BindingElement(pat));
                 }
-
-                items.push(MaybeParenPatOrExprOrSpread::Pat(pat));
             } else {
                 if has_modifier {
                     self.emit_err(self.span(modifier_start), SyntaxError::TS2369);
@@ -1052,18 +1024,20 @@ impl Parser<'_> {
                     | MaybeParenPatOrExprOrSpread::Expr(expr) => {
                         matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_)))
                     }
-                    MaybeParenPatOrExprOrSpread::Pat(Pat::Expr(expr)) => {
-                        matches!(**expr, Expr::Ident(..))
-                    }
-                    MaybeParenPatOrExprOrSpread::Pat(Pat::Ident(..)) => true,
-                    MaybeParenPatOrExprOrSpread::Pat(_) => false,
+                    MaybeParenPatOrExprOrSpread::BindingElement(BindingElement {
+                        init: None,
+                        ..
+                    }) => true,
+                    _ => false,
                 }
             } {
-                let params = self
-                    .parse_paren_items_as_params(items)?
+                let (params, rest_param) = self.parse_paren_items_as_params(items)?;
+                let params = params
                     .into_iter()
                     .map(|p| Param::from_pat(p, program_data!(self).data()))
                     .collect();
+
+                let params = FunctionParams { params, rest_param };
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
@@ -1269,9 +1243,13 @@ impl Parser<'_> {
         let paren_items = self
             .include_in_expr(true)
             .parse_args_or_pats(&mut paren_assign_props)?;
-        let has_pattern = paren_items
-            .iter()
-            .any(|item| matches!(item, MaybeParenPatOrExprOrSpread::Pat(..)));
+        let has_pattern = paren_items.iter().any(|item| {
+            matches!(
+                item,
+                MaybeParenPatOrExprOrSpread::BindingElement(_)
+                    | MaybeParenPatOrExprOrSpread::BindingRestElement(_)
+            )
+        });
 
         let paren_assign_props = match paren_assign_props {
             AssignProps::Buffer(props) => props,
@@ -1289,11 +1267,13 @@ impl Parser<'_> {
                 expect!(p, "=>");
 
                 let exprs = items_ref.clone_node(program_data!(p).data());
-                let params = p
-                    .parse_paren_items_as_params(exprs)?
+                let (params, rest_param) = p.parse_paren_items_as_params(exprs)?;
+                let params = params
                     .into_iter()
                     .map(|pat| Param::from_pat(pat, program_data!(p).data()))
                     .collect();
+
+                let params = FunctionParams { params, rest_param };
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
                 let body = p.make_arrow_fn_block(body);
@@ -1333,11 +1313,13 @@ impl Parser<'_> {
             }
             expect!(self, "=>");
 
-            let params = self
-                .parse_paren_items_as_params(paren_items)?
+            let (params, rest_param) = self.parse_paren_items_as_params(paren_items)?;
+            let params = params
                 .into_iter()
                 .map(|p| Param::from_pat(p, program_data!(self).data()))
                 .collect();
+
+            let params = FunctionParams { params, rest_param };
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;
             let is_block = matches!(body, BlockStmtOrExpr::BlockStmt(_));
@@ -1377,7 +1359,10 @@ impl Parser<'_> {
                 match item {
                     MaybeParenPatOrExprOrSpread::Expr(e) => Ok(ExprOrSpread::Expr(e.unwrap())),
                     MaybeParenPatOrExprOrSpread::Spread(e) => Ok(ExprOrSpread::Spread(e.unwrap())),
-                    MaybeParenPatOrExprOrSpread::Pat(p) => {
+                    MaybeParenPatOrExprOrSpread::BindingElement(p) => {
+                        syntax_error!(self, get_span!(self, p.node_id()), SyntaxError::InvalidExpr)
+                    }
+                    MaybeParenPatOrExprOrSpread::BindingRestElement(p) => {
                         syntax_error!(self, get_span!(self, p.node_id()), SyntaxError::InvalidExpr)
                     }
                 }
@@ -1672,49 +1657,6 @@ impl Parser<'_> {
 
         self.parse_subscripts(MaybeParenExprOrSuper::Expr(import), true)
     }
-
-    pub(super) fn check_assign_target(&mut self, expr: &Expr, deny_call: bool) {
-        // We follow behaviour of tsc
-        if self.input.syntax().typescript() && self.syntax().early_errors() {
-            let is_eval_or_arguments = match expr {
-                Expr::Ident(i) => {
-                    i.name == id_for_built_in!("eval") || i.name == id_for_built_in!("arguments")
-                }
-                _ => false,
-            };
-
-            if is_eval_or_arguments {
-                self.emit_strict_mode_err(get_span!(self, expr.node_id()), SyntaxError::TS1100);
-            }
-
-            fn should_deny(
-                e: &Expr,
-                deny_call: bool,
-                parenthesised_exprs: &FxHashSet<NodeId>,
-            ) -> bool {
-                match e {
-                    _ if parenthesised_exprs.contains(&e.node_id()) => true,
-                    Expr::Lit(..) => false,
-                    Expr::Call(..) => deny_call,
-                    Expr::Bin(..) => false,
-
-                    _ => true,
-                }
-            }
-
-            // It is an early Reference Error if LeftHandSideExpression is neither
-            // an ObjectLiteral nor an ArrayLiteral and
-            // IsValidSimpleAssignmentTarget of LeftHandSideExpression is false.
-            if !is_eval_or_arguments
-                && !is_valid_simple_assignment_target(expr, self.ctx().strict)
-                && should_deny(expr, deny_call, &self.parenthesised_exprs)
-            {
-                self.emit_err(get_span!(self, expr.node_id()), SyntaxError::TS2406);
-            }
-        } else if !is_valid_simple_assignment_target(expr, self.ctx().strict) {
-            self.emit_err(get_span!(self, expr.node_id()), SyntaxError::TS2406);
-        }
-    }
 }
 
 fn is_import(obj: &MaybeParenExprOrSuper) -> bool {
@@ -1744,14 +1686,9 @@ pub(super) enum MaybeParen {
 }
 
 impl MaybeParen {
+    // TODO: don't call this unwrap - it gives the impression that this will
+    // panic.
     pub fn unwrap(self) -> Box<Expr> {
-        match self {
-            MaybeParen::Expr(expr) => expr,
-            MaybeParen::Wrapped(expr) => expr,
-        }
-    }
-
-    pub fn inner(&self) -> &Expr {
         match self {
             MaybeParen::Expr(expr) => expr,
             MaybeParen::Wrapped(expr) => expr,
@@ -1789,6 +1726,8 @@ enum MaybeParenExprOrSuper {
 }
 
 impl MaybeParenExprOrSuper {
+    // TODO: don't call this unwrap - it gives the impression that this will
+    // panic.
     fn unwrap(self) -> ExprOrSuper {
         match self {
             MaybeParenExprOrSuper::Expr(n) => ExprOrSuper::Expr(n.unwrap()),
@@ -1820,7 +1759,8 @@ impl CloneNode for MaybeParenExprOrSuper {
 }
 
 pub(super) enum MaybeParenPatOrExprOrSpread {
-    Pat(Pat),
+    BindingElement(BindingElement),
+    BindingRestElement(BindingRestElement),
     Expr(MaybeParen),
     Spread(MaybeParenSpreadElement),
 }
@@ -1828,7 +1768,12 @@ pub(super) enum MaybeParenPatOrExprOrSpread {
 impl CloneNode for MaybeParenPatOrExprOrSpread {
     fn clone_node(&self, program_data: &mut ProgramData) -> Self {
         match self {
-            MaybeParenPatOrExprOrSpread::Pat(n) => Self::Pat(n.clone_node(program_data)),
+            MaybeParenPatOrExprOrSpread::BindingElement(n) => {
+                Self::BindingElement(n.clone_node(program_data))
+            }
+            MaybeParenPatOrExprOrSpread::BindingRestElement(n) => {
+                Self::BindingRestElement(n.clone_node(program_data))
+            }
             MaybeParenPatOrExprOrSpread::Expr(n) => Self::Expr(n.clone_node(program_data)),
             MaybeParenPatOrExprOrSpread::Spread(n) => Self::Spread(n.clone_node(program_data)),
         }
@@ -1841,6 +1786,8 @@ enum MaybeParenExprOrSpread {
 }
 
 impl MaybeParenExprOrSpread {
+    // TODO: don't call this unwrap - it gives the impression that this will
+    // panic.
     fn unwrap(self) -> ExprOrSpread {
         match self {
             MaybeParenExprOrSpread::Expr(n) => ExprOrSpread::Expr(n.unwrap()),
@@ -1864,6 +1811,8 @@ pub(super) struct MaybeParenSpreadElement {
 }
 
 impl MaybeParenSpreadElement {
+    // TODO: don't call this unwrap - it gives the impression that this will
+    // panic.
     fn unwrap(self) -> SpreadElement {
         SpreadElement {
             node_id: self.node_id,

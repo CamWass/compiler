@@ -20,12 +20,12 @@ pub use self::{
     },
     decl::{ClassDecl, Decl, FnDecl, VarDecl, VarDeclKind, VarDeclarator},
     expr::{
-        ArrayLit, ArrowExpr, AssignExpr, AwaitExpr, BinExpr, CallExpr, ClassExpr, CondExpr, Expr,
-        ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr, ObjectLit,
-        OptChainBase, OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr,
-        Tpl, TplElement, TplString, UnaryExpr, UpdateExpr, YieldExpr,
+        ArrayLit, ArrowExpr, AssignExpr, AssignTarget, AwaitExpr, BinExpr, CallExpr, ClassExpr,
+        CondExpr, Expr, ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr,
+        ObjectLit, OptChainBase, OptChainExpr, SeqExpr, SimpleAssignTarget, SpreadElement, Super,
+        TaggedTpl, ThisExpr, Tpl, TplElement, TplString, UnaryExpr, UpdateExpr, YieldExpr,
     },
-    function::{FnFlags, Function, Param},
+    function::{FnFlags, Function, FunctionParams, Param},
     ident::{BindingIdent, Ident, PrivateName},
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str},
     module::{Module, ModuleItem, Program, Script},
@@ -36,7 +36,11 @@ pub use self::{
         ImportStarAsSpecifier, ModuleDecl, NamedExport,
     },
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
-    pat::{ArrayPat, AssignPat, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat},
+    pat::{
+        ArrayAssignmentPat, ArrayBindingPat, AssignmentElement, AssignmentPat, AssignmentProperty,
+        AssignmentRest, BindingElement, BindingPat, BindingPatOrIdent, BindingProperty,
+        BindingRestElement, BindingRestProperty, ObjectAssignmentPat, ObjectBindingPat,
+    },
     prop::{
         AssignProp, ComputedPropName, GetterProp, KeyValueProp, MethodProp, Prop, PropName,
         SetterProp, SpreadAssignment,
@@ -44,17 +48,14 @@ pub use self::{
     stmt::{
         BlockStmt, BreakStmt, CatchClause, ContinueStmt, DebuggerStmt, DoWhileStmt, EmptyStmt,
         ExprStmt, ForInStmt, ForOfStmt, ForStmt, IfStmt, LabeledStmt, ReturnStmt, Stmt, SwitchCase,
-        SwitchStmt, ThrowStmt, TryStmt, TryStmtTail, VarDeclOrExpr, VarDeclOrPat, WhileStmt,
-        WithStmt,
+        SwitchStmt, ThrowStmt, TryStmt, TryStmtTail, VarDeclOrAssignTarget, VarDeclOrExpr,
+        WhileStmt, WithStmt,
     },
 };
 use big_int::BigUintValue;
-use clone_node::CloneNode;
 use common::Span;
 use hashbrown::HashTable;
 use index::vec::IndexVec;
-use node_eq::NodeEq;
-use node_id::GetNodeIdMacro;
 pub use paste;
 use rustc_hash::FxHasher;
 use serde::Serialize;
@@ -374,7 +375,21 @@ make_built_ins!(
     "unicodeSets",
     "valueOf",
     "XMLHttpRequest",
+    "_I_N_V_A_L_I_D_",
 );
+
+/// Used for dummy identifiers created by the parser during error recovery.
+/// Rather than halt parsing on any error, we try to continue parsing, but we
+/// have to insert _something_ into the AST, so we create dummy nodes - mainly
+/// identifiers with this name.
+///
+/// Since we don't continue compilation when the parser errors, this name should
+/// never escape the parser.
+///
+/// Having this sentinel 'invalid' name prevents us from having dedicated
+/// 'invalid' AST node types that we'd have to explicitly ignore throughout the
+/// compiler.
+pub const INVALID_IDENT_NAME: NameId = id_for_built_in!("_I_N_V_A_L_I_D_");
 
 #[derive(Debug)]
 pub struct ProgramData {
@@ -581,12 +596,6 @@ impl TestingProgramData {
             .find(|(_, candidate_name)| candidate_name.0 == name)
             .map(|(i, _)| ProgramData::mark_resolved(i))
     }
-}
-
-/// Represents a invalid node.
-#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
-pub struct Invalid {
-    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Default)]

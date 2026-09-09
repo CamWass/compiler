@@ -63,7 +63,12 @@ impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
                 .params
                 .into_iter()
                 .filter_map(|p| {
-                    if let Pat::Ident(name) = &p.pat {
+                    if let BindingElement {
+                        target: BindingPatOrIdent::Ident(name),
+                        init: None,
+                        ..
+                    } = &p.pat
+                    {
                         Some(name.id.name)
                     } else {
                         None
@@ -226,42 +231,46 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
 
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         debug_assert!(!self.in_lhs);
-        let lhs = match node.left.as_ref() {
-            // for (var x in y) {...}
-            VarDeclOrPat::VarDecl(v) => {
-                assert!(v.decls.len() == 1);
-                &v.decls.first().unwrap().name
-            }
-            // for (x in y) {...}
-            VarDeclOrPat::Pat(p) => p,
-        };
-
         // Note that the LHS may never be assigned to or evaluated, like in:
         //   for (x in []) {}
         // so should not be killed.
         self.in_lhs = true;
-        lhs.visit_with(self);
+
+        match node.left.as_ref() {
+            // for (var x in y) {...}
+            VarDeclOrAssignTarget::VarDecl(var_decl) => {
+                assert!(var_decl.decls.len() == 1);
+                var_decl.decls.first().unwrap().name.visit_with(self);
+            }
+            // for (x in y) {...}
+            VarDeclOrAssignTarget::AssignTarget(assign_target) => {
+                assign_target.visit_with(self);
+            }
+        }
+
         self.in_lhs = false;
 
         // rhs is executed only once so we don't go into it every loop.
     }
     fn visit_for_of_stmt(&mut self, node: &'ast ForOfStmt) {
         debug_assert!(!self.in_lhs);
-        let lhs = match node.left.as_ref() {
-            // for (var x in y) {...}
-            VarDeclOrPat::VarDecl(v) => {
-                assert!(v.decls.len() == 1);
-                &v.decls.first().unwrap().name
-            }
-            // for (x in y) {...}
-            VarDeclOrPat::Pat(p) => p,
-        };
-
         // Note that the LHS may never be assigned to or evaluated, like in:
-        //   for (x in []) {}
+        //   for (x of []) {}
         // so should not be killed.
         self.in_lhs = true;
-        lhs.visit_with(self);
+
+        match node.left.as_ref() {
+            // for (var x of y) {...}
+            VarDeclOrAssignTarget::VarDecl(var_decl) => {
+                assert!(var_decl.decls.len() == 1);
+                var_decl.decls.first().unwrap().name.visit_with(self);
+            }
+            // for (x of y) {...}
+            VarDeclOrAssignTarget::AssignTarget(assign_target) => {
+                assign_target.visit_with(self);
+            }
+        }
+
         self.in_lhs = false;
 
         // rhs is executed only once so we don't go into it every loop.
@@ -269,7 +278,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
 
     fn visit_var_declarator(&mut self, node: &'ast VarDeclarator) {
         debug_assert!(!self.in_lhs);
-        if let Pat::Ident(name) = &node.name {
+        if let BindingPatOrIdent::Ident(name) = &node.name {
             if let Some(init) = &node.init {
                 init.visit_with(self);
                 if !self.conditional {
@@ -345,68 +354,88 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
         self.conditional = old_cond;
     }
 
-    // Only add/visit names in destructuring patterns if they're not lvalues.
-    // e.g. "x" in "const {foo = x} = obj;"
-    // fn visit_pat(&mut self, node: &'ast Pat) {
-    //     match node {
-    //         Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) | Pat::Expr(_) => {
-    //             node.visit_children_with(self)
-    //         }
-    //         Pat::Rest(_) => {}
-    //         Pat::Assign(p) => {
-    //             p.right.visit_with(self);
-    //         }
-    //         Pat::Invalid(_) => unreachable!(),
-    //     }
-    // }
-    fn visit_array_pat(&mut self, node: &'ast ArrayPat) {
+    fn visit_array_binding_pat(&mut self, node: &'ast ArrayBindingPat) {
         let old = self.in_destructuring;
         self.in_destructuring = true;
         node.visit_children_with(self);
         self.in_destructuring = old;
     }
-    fn visit_object_pat(&mut self, node: &'ast ObjectPat) {
+    fn visit_object_binding_pat(&mut self, node: &'ast ObjectBindingPat) {
         let old = self.in_destructuring;
         self.in_destructuring = true;
         node.visit_children_with(self);
         self.in_destructuring = old;
     }
-    fn visit_assign_pat(&mut self, node: &'ast AssignPat) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-
-        node.left.visit_with(self);
-
-        self.in_lhs = false;
-
-        node.right.visit_with(self);
-
-        self.in_lhs = old;
-    }
-    fn visit_key_value_pat_prop(&mut self, node: &'ast KeyValuePatProp) {
+    fn visit_binding_property(&mut self, node: &'ast BindingProperty) {
         let old = self.in_lhs;
         self.in_lhs = false;
-        node.key.visit_with(self);
+        node.prop.visit_with(self);
         self.in_lhs = true;
-        node.value.visit_with(self);
+        node.target.visit_with(self);
         self.in_lhs = old;
     }
-    fn visit_rest_pat(&mut self, node: &'ast RestPat) {
+    fn visit_binding_rest_property(&mut self, node: &'ast BindingRestProperty) {
         let old = self.in_lhs;
         self.in_lhs = true;
         node.arg.visit_with(self);
         self.in_lhs = old;
     }
+    fn visit_binding_rest_element(&mut self, node: &'ast BindingRestElement) {
+        let old = self.in_lhs;
+        self.in_lhs = true;
+        node.arg.visit_with(self);
+        self.in_lhs = old;
+    }
+    fn visit_binding_element(&mut self, node: &'ast BindingElement) {
+        let old = self.in_lhs;
+        self.in_lhs = true;
 
-    // fn visit_binding_ident(&mut self, node: &'ast BindingIdent) {
-    //     // Only add names in destructuring patterns if they're not lvalues.
-    //     // e.g. "x" in "const {foo = x} = obj;"
-    //     if !self.in_destructuring {
-    //         // if !(self.in_lhs && self.in_destructuring) {
-    //         self.analysis
-    //             .addToSetIfLocal(&node.to_id(), self.gen, "generated", Node::from(node));
-    //     }
-    // }
+        node.target.visit_with(self);
+
+        self.in_lhs = false;
+
+        node.init.visit_with(self);
+
+        self.in_lhs = old;
+    }
+    fn visit_array_assignment_pat(&mut self, node: &'ast ArrayAssignmentPat) {
+        let old = self.in_destructuring;
+        self.in_destructuring = true;
+        node.visit_children_with(self);
+        self.in_destructuring = old;
+    }
+    fn visit_object_assignment_pat(&mut self, node: &'ast ObjectAssignmentPat) {
+        let old = self.in_destructuring;
+        self.in_destructuring = true;
+        node.visit_children_with(self);
+        self.in_destructuring = old;
+    }
+    fn visit_assignment_property(&mut self, node: &'ast AssignmentProperty) {
+        let old = self.in_lhs;
+        self.in_lhs = false;
+        node.prop.visit_with(self);
+        self.in_lhs = true;
+        node.target.visit_with(self);
+        self.in_lhs = old;
+    }
+    fn visit_assignment_rest(&mut self, node: &'ast AssignmentRest) {
+        let old = self.in_lhs;
+        self.in_lhs = true;
+        node.arg.visit_with(self);
+        self.in_lhs = old;
+    }
+    fn visit_assignment_element(&mut self, node: &'ast AssignmentElement) {
+        let old = self.in_lhs;
+        self.in_lhs = true;
+
+        node.target.visit_with(self);
+
+        self.in_lhs = false;
+
+        node.init.visit_with(self);
+
+        self.in_lhs = old;
+    }
 
     fn visit_ident(&mut self, node: &'ast Ident) {
         if !(self.in_destructuring && self.in_lhs) {
@@ -420,49 +449,33 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
 
     fn visit_assign_expr(&mut self, node: &'ast AssignExpr) {
         debug_assert!(!self.in_lhs);
-        let mut handle_ident_lhs = |lhs: &Ident| {
+        if let AssignTarget::Simple(SimpleAssignTarget::Ident(lhs)) = node.left.as_ref() {
             if !self.conditional {
-                self.analysis.add_to_set_if_local(&lhs.name, self.kill_set);
+                self.analysis
+                    .add_to_set_if_local(&lhs.id.name, self.kill_set);
             }
             if node.op != AssignOp::Assign {
                 // assignments such as a += 1 reads a.
-                self.analysis.add_to_set_if_local(&lhs.name, self.gen_set);
+                self.analysis
+                    .add_to_set_if_local(&lhs.id.name, self.gen_set);
             }
             node.right.visit_with(self);
-        };
+            return;
+        }
 
-        match &node.left {
-            PatOrExpr::Pat(left) => {
-                if let Pat::Ident(lhs) = left.as_ref() {
-                    handle_ident_lhs(&lhs.id);
-                    return;
-                }
-
-                if node.op == AssignOp::Assign
-                    && matches!(&**left, Pat::Array(_) | Pat::Object(_))
-                    && !self.conditional
-                {
-                    for lhs_node in find_pat_ids(left) {
-                        self.analysis
-                            .add_to_set_if_local(&lhs_node.0, self.kill_set);
-                    }
-                }
-                self.in_lhs = true;
-                node.left.visit_with(self);
-                self.in_lhs = false;
-                node.right.visit_with(self);
-            }
-            PatOrExpr::Expr(left) => {
-                if let Expr::Ident(lhs) = left.as_ref() {
-                    handle_ident_lhs(lhs);
-                    return;
-                }
-                self.in_lhs = true;
-                node.left.visit_with(self);
-                self.in_lhs = false;
-                node.right.visit_with(self);
+        if node.op == AssignOp::Assign
+            && matches!(node.left.as_ref(), AssignTarget::AssignmentPat(_))
+            && !self.conditional
+        {
+            for lhs_node in find_assign_target_ids(&node.left) {
+                self.analysis
+                    .add_to_set_if_local(&lhs_node.0, self.kill_set);
             }
         }
+        self.in_lhs = true;
+        node.left.visit_with(self);
+        self.in_lhs = false;
+        node.right.visit_with(self);
     }
 
     fn visit_param(&mut self, node: &'ast Param) {

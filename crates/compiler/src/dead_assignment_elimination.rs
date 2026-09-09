@@ -116,7 +116,7 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
                     return;
                 }
 
-                let Pat::Ident(lhs) = &var.decls[0].name else {
+                let BindingPatOrIdent::Ident(lhs) = &var.decls[0].name else {
                     // Can't optimise declarator that declares multiple names.
                     return;
                 };
@@ -192,6 +192,9 @@ impl Driver<'_> {
         node.params_mut()
             .into_iter()
             .for_each(|p| p.visit_mut_with(self));
+        if let Some(rest_param) = node.rest_param_mut() {
+            rest_param.visit_mut_with(self);
+        }
         node.body_mut().visit_mut_with(self);
         let function_data = self.function_stack.pop().unwrap();
 
@@ -287,7 +290,7 @@ impl VisitMut<'_> for Driver<'_> {
         node.right.visit_mut_children_with(self);
         node.body.visit_mut_children_with(self);
 
-        if let VarDeclOrPat::VarDecl(init) = node.left.as_mut() {
+        if let VarDeclOrAssignTarget::VarDecl(init) = node.left.as_mut() {
             // We can't optimise assignments in the variable declaration of a
             // for loop, since there's not a spot directly following the
             // variable where we can move the RHS.
@@ -303,7 +306,7 @@ impl VisitMut<'_> for Driver<'_> {
         node.right.visit_mut_children_with(self);
         node.body.visit_mut_children_with(self);
 
-        if let VarDeclOrPat::VarDecl(init) = node.left.as_mut() {
+        if let VarDeclOrAssignTarget::VarDecl(init) = node.left.as_mut() {
             // We can't optimise assignments in the variable declaration of a
             // for loop, since there's not a spot directly following the
             // variable where we can move the RHS.
@@ -322,8 +325,10 @@ impl VisitMut<'_> for Driver<'_> {
             // We can't remove the RHS of a const, since that creates an invalid
             // AST.
             if node.kind != VarDeclKind::Const {
-                let has_decl_with_ident_lhs =
-                    node.decls.iter().any(|d| matches!(d.name, Pat::Ident(_)));
+                let has_decl_with_ident_lhs = node
+                    .decls
+                    .iter()
+                    .any(|d| matches!(d.name, BindingPatOrIdent::Ident(_)));
 
                 if has_decl_with_ident_lhs {
                     function_data.contains_removable_assign = true;
@@ -337,10 +342,10 @@ impl VisitMut<'_> for Driver<'_> {
 
         if let Some(function_data) = self.function_stack.last_mut() {
             if let Expr::Assign(assign) = node {
-                let lhs_is_ident = match &assign.left {
-                    PatOrExpr::Expr(lhs) => matches!(lhs.as_ref(), Expr::Ident(_)),
-                    PatOrExpr::Pat(lhs) => matches!(lhs.as_ref(), Pat::Ident(_)),
-                };
+                let lhs_is_ident = matches!(
+                    assign.left.as_ref(),
+                    AssignTarget::Simple(SimpleAssignTarget::Ident(_))
+                );
 
                 if lhs_is_ident {
                     function_data.contains_removable_assign = true;
@@ -348,7 +353,7 @@ impl VisitMut<'_> for Driver<'_> {
             }
 
             if let Expr::Update(expr) = node {
-                if matches!(expr.arg.as_ref(), Expr::Ident(_)) {
+                if matches!(expr.arg.as_ref(), SimpleAssignTarget::Ident(_)) {
                     function_data.contains_removable_assign = true;
                 }
             }

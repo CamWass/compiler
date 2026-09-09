@@ -137,5 +137,6 @@ impl Visit<'_> for Validator {
 
     fn visit_name_id(&mut self, name: &NameId) {
         assert!(*name != NameId::DUMMY);
+        assert!(*name != INVALID_IDENT_NAME);
     }
 }

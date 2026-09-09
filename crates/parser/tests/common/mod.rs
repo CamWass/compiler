@@ -58,38 +58,6 @@ impl VisitMut<'_> for Normalizer<'_> {
         }
     }
 
-    fn visit_mut_pat(&mut self, node: &mut Pat) {
-        node.visit_mut_children_with(self);
-
-        if let Pat::Expr(expr) = node {
-            match *expr.take() {
-                Expr::Ident(id) => {
-                    *node = Pat::Ident(BindingIdent { id });
-                }
-                expr => {
-                    *node = Pat::Expr(Box::new(expr));
-                }
-            }
-        }
-    }
-
-    fn visit_mut_pat_or_expr(&mut self, node: &mut PatOrExpr) {
-        node.visit_mut_children_with(self);
-
-        match node {
-            PatOrExpr::Expr(expr) => match *expr.take() {
-                Expr::Ident(id) => {
-                    *node = PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent { id })));
-                }
-                expr => *node = PatOrExpr::Expr(Box::new(expr)),
-            },
-            PatOrExpr::Pat(pat) => match *pat.take() {
-                Pat::Expr(expr) => *node = PatOrExpr::Expr(expr),
-                pat => *node = PatOrExpr::Pat(Box::new(pat)),
-            },
-        }
-    }
-
     fn visit_mut_prop_name(&mut self, n: &mut PropName) {
         if !self.is_test262 {
             n.visit_mut_children_with(self);

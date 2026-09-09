@@ -1,4 +1,4 @@
-use super::{pat::PatType, *};
+use super::*;
 use crate::context::{Context, ContextFlags, YesMaybe};
 use common::{BytePos, Pos, Span};
 use expression::MaybeParen;
@@ -14,11 +14,11 @@ enum ForHead {
         update: Option<Box<Expr>>,
     },
     ForIn {
-        left: Box<VarDeclOrPat>,
+        left: Box<VarDeclOrAssignTarget>,
         right: Box<Expr>,
     },
     ForOf {
-        left: Box<VarDeclOrPat>,
+        left: Box<VarDeclOrAssignTarget>,
         right: Box<Expr>,
     },
 }
@@ -318,9 +318,7 @@ impl Parser<'_> {
 
                 return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self, span),
-                    expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, span),
-                    })),
+                    expr: Box::new(self.create_invalid_expr()),
                 })));
             }
             // Error recovery
@@ -332,9 +330,7 @@ impl Parser<'_> {
 
                 return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self, span),
-                    expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, span),
-                    })),
+                    expr: Box::new(self.create_invalid_expr()),
                 })));
             }
             tok!("try") => {
@@ -666,7 +662,7 @@ impl Parser<'_> {
                     );
                 }
 
-                return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));
+                return self.parse_for_each_head(VarDeclOrAssignTarget::VarDecl(decl));
             }
 
             expect!(self, ';');
@@ -684,19 +680,9 @@ impl Parser<'_> {
 
         // for (a of b)
         if matches!(self.input.cur(), tok!("of") | tok!("in")) {
-            let is_in = self.is(tok!("in"));
+            let pat = self.reparse_expr_as_assign_target(init.unwrap());
 
-            let pat = self.reparse_expr_as_pat(PatType::AssignPat, init.unwrap())?;
-
-            // for ({} in foo) is invalid
-            if self.input.syntax().typescript() && is_in {
-                match pat {
-                    Pat::Ident(_) | Pat::Expr(_) => {}
-                    _ => self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS2491),
-                }
-            }
-
-            return self.parse_for_each_head(VarDeclOrPat::Pat(pat));
+            return self.parse_for_each_head(VarDeclOrAssignTarget::AssignTarget(pat));
         }
 
         expect!(self, ';');
@@ -710,7 +696,7 @@ impl Parser<'_> {
         self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::Expr(init.unwrap()))))
     }
 
-    fn parse_for_each_head(&mut self, left: VarDeclOrPat) -> PResult<ForHead> {
+    fn parse_for_each_head(&mut self, left: VarDeclOrAssignTarget) -> PResult<ForHead> {
         let of = self.input.bump() == tok!("of");
         if of {
             let right = self
@@ -996,7 +982,7 @@ impl Parser<'_> {
     }
 
     /// Optional since es2019
-    fn parse_catch_param(&mut self) -> PResult<Option<Pat>> {
+    fn parse_catch_param(&mut self) -> PResult<Option<BindingPatOrIdent>> {
         if self.eat(tok!('(')) {
             let pat = self.parse_binding_pat_or_ident()?;
 
@@ -1133,7 +1119,7 @@ impl Parser<'_> {
         let name = self.parse_binding_pat_or_ident()?;
 
         // TS definite.
-        if self.input.syntax().typescript() && matches!(name, Pat::Ident(_)) {
+        if self.input.syntax().typescript() && matches!(name, BindingPatOrIdent::Ident(_)) {
             self.eat(tok!('!'));
         }
 
@@ -1155,7 +1141,7 @@ impl Parser<'_> {
                     None
                 } else {
                     match name {
-                        Pat::Ident(..) => None,
+                        BindingPatOrIdent::Ident(..) => None,
                         _ => {
                             syntax_error!(self, self.span(start), SyntaxError::PatVarWithoutInit)
                         }

@@ -89,16 +89,18 @@ impl SourceMapperExt for Rc<SourceMap> {
     }
 }
 
-pub fn for_var_ends_with_alpha_num(var: &VarDeclOrPat) -> bool {
+pub fn for_var_ends_with_alpha_num(var: &VarDeclOrAssignTarget) -> bool {
     match var {
-        VarDeclOrPat::VarDecl(n) => {
+        VarDeclOrAssignTarget::VarDecl(n) => {
             assert!(n.decls.len() == 1 && n.decls[0].init.is_none());
             true
         }
-        VarDeclOrPat::Pat(n) => match n {
-            Pat::Object(_) | Pat::Array(_) => false,
-            Pat::Ident(_) => true,
-            _ => unreachable!(),
+        VarDeclOrAssignTarget::AssignTarget(n) => match n {
+            AssignTarget::Simple(simple_assign_target) => match simple_assign_target {
+                SimpleAssignTarget::Ident(_) => true,
+                SimpleAssignTarget::Member(member_expr) => !member_expr.computed,
+            },
+            AssignTarget::AssignmentPat(_) => false,
         },
     }
 }

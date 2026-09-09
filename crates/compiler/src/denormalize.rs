@@ -17,15 +17,9 @@ impl VisitMut<'_> for Denormalize {
     fn visit_mut_assign_expr(&mut self, node: &mut AssignExpr) {
         node.visit_mut_children_with(self);
 
-        let assign_lhs = match &node.left {
-            PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-                Expr::Ident(lhs) => lhs,
-                _ => return,
-            },
-            PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-                Pat::Ident(lhs) => &lhs.id,
-                _ => return,
-            },
+        let assign_lhs = match node.left.as_ref() {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(ident)) => &ident.id,
+            _ => return,
         };
 
         if let Expr::Bin(assign_rhs) = node.right.as_ref() {

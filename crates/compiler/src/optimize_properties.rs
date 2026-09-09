@@ -19,7 +19,6 @@ use std::convert::TryInto;
 use crate::convert::ecma_number_to_string;
 use crate::find_vars::{FunctionLikeNode, VarId};
 use crate::name_generator::NameGenerator;
-use crate::utils::unwrap_as;
 use ast::*;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
@@ -663,11 +662,7 @@ impl GraphVisitor<'_, '_> {
                 }
             }
             Expr::Assign(n) => {
-                let lhs = match &n.left {
-                    ast::PatOrExpr::Expr(n) => PatOrExpr::Expr(n),
-                    ast::PatOrExpr::Pat(n) => PatOrExpr::Pat(n),
-                };
-                self.record_assignment(lhs, &n.right, n.op)
+                self.record_assignment(DestructuringTarget::from(n.left.as_ref()), &n.right, n.op)
             }
             Expr::Member(n) => self.get_rhs_of_member_expr(n, used),
             Expr::Cond(n) => {
@@ -780,8 +775,6 @@ impl GraphVisitor<'_, '_> {
                     }
                 }
             }
-
-            Expr::Invalid(_) => unreachable!(),
         }
     }
 
@@ -933,113 +926,194 @@ impl GraphVisitor<'_, '_> {
     /// ```js
     /// let { a: b } = c
     /// ```
-    fn record_assignment(&mut self, lhs: PatOrExpr, rhs: &Expr, op: AssignOp) -> Vec<PointerId> {
+    fn record_assignment(
+        &mut self,
+        lhs: DestructuringTarget,
+        rhs: &Expr,
+        op: AssignOp,
+    ) -> Vec<PointerId> {
         let conditional_assign = matches!(
             op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         );
-        if let PatOrExpr::Pat(pat @ (Pat::Array(_) | Pat::Object(_))) = lhs {
-            debug_assert!(!conditional_assign, "invalid assignment target");
-            self.handle_destructuring(pat, rhs)
-        } else {
-            let lhs = self.visit_and_get_slot(lhs);
-            let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
+        match lhs {
+            DestructuringTarget::ArrayAssignmentPat(_)
+            | DestructuringTarget::ObjectAssignmentPat(_)
+            | DestructuringTarget::ArrayBindingPat(_)
+            | DestructuringTarget::ObjectBindingPat(_) => {
+                debug_assert!(!conditional_assign, "invalid assignment target");
+                self.handle_destructuring(lhs, rhs)
+            }
+            DestructuringTarget::MemberExpr(_) | DestructuringTarget::BindingIdent(_) => {
+                let lhs = self.visit_and_get_slot(lhs);
+                let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
 
-            self.assign_to_slot(lhs, &rhs);
-            rhs
+                self.assign_to_slot(lhs, &rhs);
+                rhs
+            }
+            _ => unreachable!("Invalid assignment target"),
         }
     }
 
-    fn handle_destructuring(&mut self, lhs: &Pat, rhs: &Expr) -> Vec<PointerId> {
+    fn handle_destructuring(&mut self, lhs: DestructuringTarget, rhs: &Expr) -> Vec<PointerId> {
         let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
         self.visit_destructuring(lhs, &rhs);
         rhs
     }
 
-    fn visit_destructuring(&mut self, lhs: &Pat, rhs: &[PointerId]) {
+    fn visit_destructuring(&mut self, lhs: DestructuringTarget, rhs: &[PointerId]) {
         match lhs {
-            Pat::Object(lhs) => {
-                let has_complex_props = lhs.props.iter().any(|p| match p {
-                    ObjectPatProp::KeyValue(p) => !is_simple_prop_name(&p.key),
-                    ObjectPatProp::Rest(_) => false,
-                });
+            DestructuringTarget::ArrayAssignmentPat(array_assignment_pat) => {
+                self.invalidate(rhs);
+                for element in array_assignment_pat.elems.iter().filter_map(|e| e.as_ref()) {
+                    let rhs = &[PointerId::UNKNOWN];
+                    self.visit_destructuring(DestructuringTarget::AssignmentElement(element), rhs);
+                }
+                if let Some(rest) = &array_assignment_pat.rest {
+                    let rhs = &[PointerId::UNKNOWN];
+                    self.visit_destructuring(DestructuringTarget::AssignmentRest(rest), rhs);
+                }
+            }
+            DestructuringTarget::ArrayBindingPat(array_binding_pat) => {
+                self.invalidate(rhs);
+                for element in array_binding_pat.elems.iter().filter_map(|e| e.as_ref()) {
+                    let rhs = &[PointerId::UNKNOWN];
+                    self.visit_destructuring(DestructuringTarget::BindingElement(element), rhs);
+                }
+                if let Some(rest) = &array_binding_pat.rest {
+                    let rhs = &[PointerId::UNKNOWN];
+                    self.visit_destructuring(DestructuringTarget::BindingRestElement(rest), rhs);
+                }
+            }
+
+            DestructuringTarget::ObjectAssignmentPat(object_assignment_pat) => {
+                let has_complex_props = object_assignment_pat
+                    .props
+                    .iter()
+                    .any(|p| !is_simple_prop_name(&p.prop));
                 if has_complex_props {
                     self.invalidate(rhs);
                 }
 
-                for (i, prop) in lhs.props.iter().enumerate() {
-                    match prop {
-                        ObjectPatProp::KeyValue(prop) => {
-                            prop.key.visit_with(self);
-                            let Some(key) =
-                                PropKey::from_prop_name(&prop.key, self.store.program_data)
-                            else {
-                                continue;
-                            };
-                            for rhs in rhs {
-                                self.reference_prop(*rhs, key);
-                            }
-
-                            let new_rhs = rhs
-                                .iter()
-                                .map(|v| self.get_prop_value(*v, key.0))
-                                .collect::<Vec<_>>();
-
-                            self.visit_destructuring(&prop.value, &new_rhs);
-                        }
-                        ObjectPatProp::Rest(rest) => {
-                            debug_assert!(i == lhs.props.len() - 1);
-
-                            // TODO: throw error, don't panic.
-                            // The argument of an object pattern's rest element must be an identifier.
-                            let arg = unwrap_as!(rest.arg.as_ref(), Pat::Ident(i), i);
-
-                            // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
-                            // properties copied over. These properties must have the same names as those in the original object after renaming.
-                            // But since they are distinct objects, we don't want to conflate them.
-                            let slot = self
-                                .get_var_id_from_ident(&arg.id)
-                                .map(|v| vec![Slot::Var(v)]);
-                            self.assign_to_slot(slot, rhs);
-                        }
+                for prop in &object_assignment_pat.props {
+                    prop.prop.visit_with(self);
+                    let Some(key) = PropKey::from_prop_name(&prop.prop, self.store.program_data)
+                    else {
+                        continue;
+                    };
+                    for rhs in rhs {
+                        self.reference_prop(*rhs, key);
                     }
+
+                    let new_rhs = rhs
+                        .iter()
+                        .map(|v| self.get_prop_value(*v, key.0))
+                        .collect::<Vec<_>>();
+
+                    self.visit_destructuring(
+                        DestructuringTarget::AssignmentElement(&prop.target),
+                        &new_rhs,
+                    );
+                }
+
+                if let Some(rest) = &object_assignment_pat.rest {
+                    // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
+                    // properties copied over. These properties must have the same names as those in the original object after renaming.
+                    // But since they are distinct objects, we don't want to conflate them.
+                    self.visit_destructuring(rest.arg.as_ref().into(), rhs);
+                }
+            }
+            DestructuringTarget::ObjectBindingPat(object_binding_pat) => {
+                let has_complex_props = object_binding_pat
+                    .props
+                    .iter()
+                    .any(|p| !is_simple_prop_name(&p.prop));
+                if has_complex_props {
+                    self.invalidate(rhs);
+                }
+
+                for prop in &object_binding_pat.props {
+                    prop.prop.visit_with(self);
+                    let Some(key) = PropKey::from_prop_name(&prop.prop, self.store.program_data)
+                    else {
+                        continue;
+                    };
+                    for rhs in rhs {
+                        self.reference_prop(*rhs, key);
+                    }
+
+                    let new_rhs = rhs
+                        .iter()
+                        .map(|v| self.get_prop_value(*v, key.0))
+                        .collect::<Vec<_>>();
+
+                    self.visit_destructuring(
+                        DestructuringTarget::BindingElement(prop.target.as_ref()),
+                        &new_rhs,
+                    );
+                }
+
+                if let Some(rest) = &object_binding_pat.rest {
+                    // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
+                    // properties copied over. These properties must have the same names as those in the original object after renaming.
+                    // But since they are distinct objects, we don't want to conflate them.
+                    self.visit_destructuring(
+                        DestructuringTarget::BindingIdent(rest.arg.as_ref()),
+                        rhs,
+                    );
                 }
             }
 
-            Pat::Ident(lhs) => {
+            DestructuringTarget::BindingElement(binding_element) => {
+                let default_value = if let Some(init) = binding_element.init.as_deref() {
+                    let mut default_value = self.get_rhs(init, true, ExprContext::Expression);
+                    default_value.extend_from_slice(rhs);
+                    default_value
+                } else {
+                    rhs.to_vec()
+                };
+
+                self.visit_destructuring(
+                    DestructuringTarget::from(&binding_element.target),
+                    &default_value,
+                );
+            }
+            DestructuringTarget::AssignmentElement(assignment_element) => {
+                let default_value = if let Some(init) = assignment_element.init.as_deref() {
+                    let mut default_value = self.get_rhs(init, true, ExprContext::Expression);
+                    default_value.extend_from_slice(rhs);
+                    default_value
+                } else {
+                    rhs.to_vec()
+                };
+
+                self.visit_destructuring(
+                    DestructuringTarget::from(assignment_element.target.as_ref()),
+                    &default_value,
+                );
+            }
+
+            DestructuringTarget::AssignmentRest(assignment_rest) => {
+                self.invalidate(rhs);
+                let rhs = &[PointerId::UNKNOWN];
+                self.visit_destructuring(assignment_rest.arg.as_ref().into(), rhs);
+            }
+            DestructuringTarget::BindingRestElement(binding_rest_element) => {
+                self.invalidate(rhs);
+                let rhs = &[PointerId::UNKNOWN];
+                self.visit_destructuring(binding_rest_element.arg.as_ref().into(), rhs);
+            }
+
+            DestructuringTarget::BindingIdent(lhs) => {
                 let slot = self
                     .get_var_id_from_ident(&lhs.id)
                     .map(|v| vec![Slot::Var(v)]);
                 self.assign_to_slot(slot, rhs);
             }
-            Pat::Array(lhs) => {
-                self.invalidate(rhs);
-                for element in lhs.elems.iter().filter_map(|e| e.as_ref()) {
-                    if let Pat::Expr(_elem) = element {
-                        todo!();
-                        // self.invalidate_slot(Node::from(elem.as_ref()));
-                    } else {
-                        let rhs = &[PointerId::UNKNOWN];
-                        self.visit_destructuring(element, rhs);
-                    }
-                }
-            }
-            Pat::Rest(lhs) => {
-                self.invalidate(rhs);
-                let rhs = &[PointerId::UNKNOWN];
-                self.visit_destructuring(&lhs.arg, rhs);
-            }
-            Pat::Assign(lhs) => {
-                let mut default_value = self.get_rhs(&lhs.right, true, ExprContext::Expression);
-                default_value.extend_from_slice(rhs);
-
-                self.visit_destructuring(&lhs.left, &default_value);
-            }
-            Pat::Expr(lhs) => {
-                let lhs = self.visit_and_get_slot(PatOrExpr::Expr(lhs));
+            DestructuringTarget::MemberExpr(_) => {
+                let lhs = self.visit_and_get_slot(lhs);
                 self.assign_to_slot(lhs, rhs);
             }
-            Pat::Invalid(_) => unreachable!(),
         }
     }
 
@@ -1055,24 +1129,12 @@ impl GraphVisitor<'_, '_> {
 
     /// Visits the given expression. If the expression resolves to a valid assignment target, a [`Slot`]
     /// representing that target is returned.
-    fn visit_and_get_slot(&mut self, node: PatOrExpr) -> Option<Vec<Slot>> {
-        let lhs_expr = match node {
-            PatOrExpr::Expr(node) => node,
-            PatOrExpr::Pat(node) => match node {
-                Pat::Ident(node) => {
-                    return self
-                        .get_var_id_from_ident(&node.id)
-                        .map(|v| vec![Slot::Var(v)]);
-                }
-                Pat::Expr(e) => e.as_ref(),
-                _ => {
-                    unreachable!();
-                }
-            },
-        };
-        match lhs_expr {
-            Expr::Ident(node) => self.get_var_id_from_ident(node).map(|v| vec![Slot::Var(v)]),
-            Expr::Member(node) => {
+    fn visit_and_get_slot(&mut self, node: DestructuringTarget) -> Option<Vec<Slot>> {
+        match node {
+            DestructuringTarget::BindingIdent(node) => self
+                .get_var_id_from_ident(&node.id)
+                .map(|v| vec![Slot::Var(v)]),
+            DestructuringTarget::MemberExpr(node) => {
                 let obj = match &node.obj {
                     ExprOrSuper::Super(_) => todo!(),
                     ExprOrSuper::Expr(obj) => self.get_rhs(obj, true, ExprContext::Expression),
@@ -1098,11 +1160,8 @@ impl GraphVisitor<'_, '_> {
                     None
                 }
             }
-            // All other nodes cannot evaluate to a reference, and should return None (but we still
-            // need to visit their children).
             _ => {
-                lhs_expr.visit_with(self);
-                None
+                unreachable!();
             }
         }
     }
@@ -1201,11 +1260,11 @@ impl Visit<'_> for GraphVisitor<'_, '_> {
                 left.visit_with(self);
 
                 let lhs = match left.as_ref() {
-                    VarDeclOrPat::VarDecl(lhs) => {
+                    VarDeclOrAssignTarget::VarDecl(lhs) => {
                         assert!(lhs.decls.len() == 1);
-                        &lhs.decls[0].name
+                        DestructuringTarget::from(&lhs.decls[0].name)
                     }
-                    VarDeclOrPat::Pat(lhs) => lhs,
+                    VarDeclOrAssignTarget::AssignTarget(lhs) => DestructuringTarget::from(lhs),
                 };
                 self.visit_destructuring(lhs, &[PointerId::STRING]);
 
@@ -1306,7 +1365,7 @@ impl Visit<'_> for GraphVisitor<'_, '_> {
 
     fn visit_var_declarator(&mut self, n: &VarDeclarator) {
         if let Some(rhs) = &n.init {
-            self.record_assignment(PatOrExpr::Pat(&n.name), rhs, AssignOp::Assign);
+            self.record_assignment(DestructuringTarget::from(&n.name), rhs, AssignOp::Assign);
         } else {
             n.name.visit_with(self);
         }
@@ -1320,13 +1379,19 @@ impl Visit<'_> for GraphVisitor<'_, '_> {
         todo!();
     }
 
-    fn visit_params(&mut self, params: &[Param]) {
+    fn visit_function_params(&mut self, node: &FunctionParams) {
         let cur_fn = self.cur_fn.unwrap();
         let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
-        for (i, param) in params.iter().enumerate() {
+        for (i, param) in node.params.iter().enumerate() {
             let index = i.try_into().expect("< u16::MAX params");
             let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
-            self.visit_destructuring(&param.pat, &[rhs]);
+            self.visit_destructuring(DestructuringTarget::BindingElement(&param.pat), &[rhs]);
+        }
+
+        if let Some(rest) = &node.rest_param {
+            let index = node.params.len().try_into().expect("< u16::MAX params");
+            let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
+            self.visit_destructuring(DestructuringTarget::BindingRestElement(rest), &[rhs]);
         }
     }
 }
@@ -1530,12 +1595,12 @@ impl FnVisitor<'_, '_> {
             var_start: VarId::from_u32(var_start),
         };
 
-        let mut has_rest = false;
+        let has_rest = node.rest_param.is_some();
         for param in node.params {
-            v.visit_pat(&param.pat);
-            if matches!(&param.pat, Pat::Rest(_)) {
-                has_rest = true;
-            }
+            param.pat.visit_with(&mut v);
+        }
+        if let Some(rest_param) = &node.rest_param {
+            rest_param.visit_with(&mut v);
         }
 
         let param_binding_count = v.vars.len() - var_start as usize;
@@ -1549,11 +1614,8 @@ impl FnVisitor<'_, '_> {
 
         node.body.visit_with(&mut v);
 
-        let tracked_param_count = if has_rest {
-            node.params.len() - 1
-        } else {
-            node.params.len()
-        };
+        // Exclude rest param.
+        let tracked_param_count = node.params.len();
 
         let static_data = StaticFunctionData {
             tracked_param_count: tracked_param_count.try_into().expect("> u16::MAX params"),
@@ -1572,8 +1634,12 @@ impl FnVisitor<'_, '_> {
         }
 
         for param in node.params {
-            self.visit_pat(&param.pat);
+            param.pat.visit_with(self);
         }
+        if let Some(rest_param) = &node.rest_param {
+            rest_param.visit_with(self);
+        }
+
         node.body.visit_with(self);
 
         if self.accesses_arguments_array && !is_arrow {
@@ -1637,9 +1703,72 @@ impl<'ast> Visit<'ast> for FnVisitor<'_, '_> {
     }
 }
 
-enum PatOrExpr<'a> {
-    Pat(&'a Pat),
-    Expr(&'a Expr),
+enum DestructuringTarget<'a> {
+    ArrayAssignmentPat(&'a ArrayAssignmentPat),
+    ObjectAssignmentPat(&'a ObjectAssignmentPat),
+    AssignmentElement(&'a AssignmentElement),
+    AssignmentRest(&'a AssignmentRest),
+
+    MemberExpr(&'a MemberExpr),
+
+    ArrayBindingPat(&'a ArrayBindingPat),
+    ObjectBindingPat(&'a ObjectBindingPat),
+    BindingElement(&'a BindingElement),
+    BindingRestElement(&'a BindingRestElement),
+
+    BindingIdent(&'a BindingIdent),
+}
+
+impl<'a> From<&'a AssignTarget> for DestructuringTarget<'a> {
+    fn from(value: &'a AssignTarget) -> Self {
+        match value {
+            AssignTarget::Simple(simple_assign_target) => match simple_assign_target {
+                SimpleAssignTarget::Ident(binding_ident) => {
+                    DestructuringTarget::BindingIdent(binding_ident)
+                }
+                SimpleAssignTarget::Member(member_expr) => {
+                    DestructuringTarget::MemberExpr(member_expr)
+                }
+            },
+            AssignTarget::AssignmentPat(assignment_pat) => match assignment_pat {
+                AssignmentPat::Array(array_assignment_pat) => {
+                    DestructuringTarget::ArrayAssignmentPat(array_assignment_pat)
+                }
+                AssignmentPat::Object(object_assignment_pat) => {
+                    DestructuringTarget::ObjectAssignmentPat(object_assignment_pat)
+                }
+            },
+        }
+    }
+}
+
+impl<'a> From<&'a BindingPatOrIdent> for DestructuringTarget<'a> {
+    fn from(value: &'a BindingPatOrIdent) -> Self {
+        match value {
+            BindingPatOrIdent::Array(array_binding_pat) => {
+                DestructuringTarget::ArrayBindingPat(array_binding_pat)
+            }
+            BindingPatOrIdent::Object(object_binding_pat) => {
+                DestructuringTarget::ObjectBindingPat(object_binding_pat)
+            }
+            BindingPatOrIdent::Ident(binding_ident) => {
+                DestructuringTarget::BindingIdent(binding_ident)
+            }
+        }
+    }
+}
+
+impl<'a> From<&'a BindingPat> for DestructuringTarget<'a> {
+    fn from(value: &'a BindingPat) -> Self {
+        match value {
+            BindingPat::Array(array_binding_pat) => {
+                DestructuringTarget::ArrayBindingPat(array_binding_pat)
+            }
+            BindingPat::Object(object_binding_pat) => {
+                DestructuringTarget::ObjectBindingPat(object_binding_pat)
+            }
+        }
+    }
 }
 
 const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
