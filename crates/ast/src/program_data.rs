@@ -25,67 +25,69 @@ impl NameId {
     }
 }
 
-// TODO: the counting logic makes this macro produce deeply nested expressions.
-// Should probably optimise.
+// A delightful consequence of PartialEq not being const at the time of
+// writing...
+const fn str_eq(a: &str, b: &str) -> bool {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+
+    true
+}
+
 macro_rules! make_built_ins {
     ($($name:tt),* $(,)?) => {
-        make_built_ins!(@internal self; (0u32); (); (); (); $($name),*);
-    };
-
-    (
-        @internal $self:ident;
-        ($count:expr);
-        ($($arms:tt)*);
-        ($($pushes:tt)*);
-        ($($consts:tt)*);
-    ) => {
+        // Use $crate::paste so consuming crates don't need `paste` in their Cargo.toml:
         $crate::paste::paste! {
-            $($consts)*
+            const BUILT_IN_NAMES: &[&str] = &[$(stringify!($name)),*];
+
+            const fn built_in_index(name: &str) -> u32 {
+                let mut i = 0;
+                while i < BUILT_IN_NAMES.len() {
+                    if str_eq(BUILT_IN_NAMES[i], name) {
+                        return i as u32;
+                    }
+                    i += 1;
+                }
+                panic!("built_in_index called with unknown built-in name");
+            }
+
+            $(
+                #[allow(non_upper_case_globals)]
+                pub const [< $name _ID >]: NameId =
+                    NameId::from_u32(built_in_index(stringify!($name)));
+            )*
 
             #[macro_export]
             macro_rules! id_for_built_in {
-                $($arms)*
+                $(
+                    ($name) => {
+                        $crate::[< $name _ID >]
+                    };
+                )*
             }
         }
 
         impl ProgramData {
-            fn add_built_ins(&mut $self) {
-                $($pushes)*
-            }
-        }
-    };
-
-    (
-        @internal $self:ident;
-        ($idx:expr);
-        ($($arms:tt)*);
-        ($($pushes:tt)*);
-        ($($consts:tt)*);
-        $head:tt $(, $tail:tt)*
-    ) => {
-        make_built_ins!(
-            @internal $self;
-            ($idx + 1u32);
-            (
-                $($arms)*
-                // Use $crate::paste so consuming crates don't need `paste` in Cargo.toml
-                ($head) => {
-                    $crate::paste::paste! { $crate::[< $head _ID >] }
-                };
-            );
-            (
-                $($pushes)*
+            fn add_built_ins(&mut self) {
                 // TODO: possible to optimise since there are no existing
                 // entries, but might not be worth it.
-                $self.get_id_for_name($head.into());
-            );
-            (
-                $($consts)*
-                #[allow(non_upper_case_globals)]
-                pub const [< $head _ID >]: NameId = NameId::from_u32($idx);
-            );
-            $($tail),*
-        );
+                $(
+                    self.get_id_for_name($name.into());
+                )*
+            }
+        }
     };
 }
 
