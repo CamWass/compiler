@@ -200,7 +200,7 @@ impl Parser<'_> {
                 if parser.syntax().typescript() && parser.is(tok!('<')) {
                     parser.parse_ts_type_args()?;
                 }
-            };
+            }
 
             if parser.syntax().typescript() && parser.eat(tok!("implements")) {
                 parser.eat_ts_heritage_clause(|_, _| {})?;

@@ -24,7 +24,7 @@ pub enum Syntax {
 
 impl Default for Syntax {
     fn default() -> Self {
-        Syntax::Es(Default::default())
+        Syntax::Es(EsConfig::default())
     }
 }
 

@@ -228,7 +228,7 @@ impl TokenContexts {
                 //     ^ ^
                 Some(TokenContext::BraceExpr) => return false,
                 _ => {}
-            };
+            }
         }
 
         match prev {
@@ -303,11 +303,7 @@ impl State {
     }
 
     pub fn can_skip_space(&self) -> bool {
-        !self
-            .context
-            .current()
-            .map(|t| t.preserve_space())
-            .unwrap_or(false)
+        !self.context.current().is_some_and(|t| t.preserve_space())
     }
 
     pub fn last_was_tpl_element(&self) -> bool {

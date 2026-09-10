@@ -437,7 +437,7 @@ impl Parser<'_> {
             && (self.is(tok!("var"))
                 || self.is(tok!("const"))
                 || (self.is(tok!("let")))
-                    && self.input.peek().is_some_and(|t| t.follows_keyword_let()))
+                    && self.input.peek().is_some_and(Token::follows_keyword_let))
         {
             self.parse_var_stmt(false).map(Decl::Var).map(Some)?
         } else {

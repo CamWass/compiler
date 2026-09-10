@@ -699,7 +699,7 @@ impl Token {
     /// Returns true if `self` can follow keyword let.
     ///
     /// e.g. `let a = xx;`, `let {a:{}} = 1`
-    pub(crate) fn follows_keyword_let(&self) -> bool {
+    pub(crate) fn follows_keyword_let(self) -> bool {
         match self {
             // This is required to recognize `let let` in strict mode.
             tok!("let") => true,

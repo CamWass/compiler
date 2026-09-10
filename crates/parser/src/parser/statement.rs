@@ -418,9 +418,8 @@ impl Parser<'_> {
         if let MaybeParen::Expr(expr_ref) = &expr {
             if let Expr::Ident(_) = expr_ref.as_ref() {
                 if self.eat(tok!(':')) {
-                    let ident = match *expr.unwrap() {
-                        Expr::Ident(ident) => ident,
-                        _ => unreachable!(),
+                    let Expr::Ident(ident) = *expr.unwrap() else {
+                        unreachable!()
                     };
                     return self.parse_labelled_stmt(ident).map(Some);
                 }

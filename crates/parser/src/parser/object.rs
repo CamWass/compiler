@@ -70,7 +70,7 @@ impl Parser<'_> {
                 });
         }
 
-        let has_modifiers = self.eat_any_ts_modifier()?;
+        let has_modifiers = self.eat_any_ts_modifier();
         let modifiers_span = self.input.prev_span();
 
         let key_start = self.input.cur_pos();
@@ -128,10 +128,9 @@ impl Parser<'_> {
                 });
         }
 
-        let ident = match key {
-            PropName::Ident(ident) => ident,
+        let PropName::Ident(ident) = key else {
             // TODO
-            _ => unexpected!(self, "identifier"),
+            unexpected!(self, "identifier")
         };
 
         if self.eat(tok!('?')) {
@@ -351,9 +350,8 @@ impl Parser<'_> {
                 target,
             });
         }
-        let prop = match prop {
-            PropName::Ident(ident) => ident,
-            _ => unexpected!(self, "an identifier"),
+        let PropName::Ident(prop) = prop else {
+            unexpected!(self, "an identifier")
         };
 
         let value = if self.eat(tok!('=')) {

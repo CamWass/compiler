@@ -51,7 +51,7 @@ impl<'d> Parser<'d> {
         input: &'d SourceFile,
         program_data: &'d mut ParserProgramData,
     ) -> Self {
-        let input = Lexer::new(syntax, Default::default(), input, program_data);
+        let input = Lexer::new(syntax, EsVersion::default(), input, program_data);
 
         let start_pos = input.start_pos();
 

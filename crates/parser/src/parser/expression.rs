@@ -113,9 +113,8 @@ impl Parser<'_> {
         // Try to parse conditional expression.
         let cond = self.parse_cond_expr(&mut inner_assign_props)?;
 
-        let mut inner_assign_props = match inner_assign_props {
-            AssignProps::Buffer(buffer) => buffer,
-            _ => unreachable!(),
+        let AssignProps::Buffer(mut inner_assign_props) = inner_assign_props else {
+            unreachable!()
         };
 
         return_if_arrow!(self, potential_arrow_start, cond);
@@ -229,10 +228,7 @@ impl Parser<'_> {
     fn parse_primary_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
 
-        let can_be_arrow = self
-            .potential_arrow_start
-            .map(|s| s == start)
-            .unwrap_or(false);
+        let can_be_arrow = self.potential_arrow_start.is_some_and(|s| s == start);
 
         match self.input.cur() {
             tok!("this") => {
@@ -825,7 +821,7 @@ impl Parser<'_> {
             self.potential_arrow_start = Some(start);
             let modifier_start = start;
 
-            let has_modifier = self.eat_any_ts_modifier()?;
+            let has_modifier = self.eat_any_ts_modifier();
             let pat_start = self.input.cur_pos();
 
             let mut arg = {
@@ -845,9 +841,8 @@ impl Parser<'_> {
                     } else {
                         let mut inner_assign_props = AssignProps::Buffer(Vec::new());
                         let expr = self.parse_bin_expr(&mut inner_assign_props)?;
-                        let inner_assign_props = match inner_assign_props {
-                            AssignProps::Buffer(buffer) => buffer,
-                            _ => unreachable!(),
+                        let AssignProps::Buffer(inner_assign_props) = inner_assign_props else {
+                            unreachable!()
                         };
                         self.finish_assignment_expr(start, expr, assign_props, inner_assign_props)?
                     };
@@ -1251,9 +1246,8 @@ impl Parser<'_> {
             )
         });
 
-        let paren_assign_props = match paren_assign_props {
-            AssignProps::Buffer(props) => props,
-            _ => unreachable!(),
+        let AssignProps::Buffer(paren_assign_props) = paren_assign_props else {
+            unreachable!()
         };
 
         // This is slow path. We handle arrow in conditional expression.

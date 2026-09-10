@@ -81,7 +81,7 @@ impl<'d> Buffer<'d> {
 
     pub fn store(&mut self, token: Token) {
         debug_assert!(self.next.is_none());
-        debug_assert!(self.cur.token != Token::Eof);
+        debug_assert_ne!(self.cur.token, Token::Eof);
         let span = self.prev_span;
 
         self.cur = TokenAndSpan {
@@ -438,53 +438,43 @@ impl<'d> Buffer<'d> {
     }
 
     pub fn expect_error_token_and_bump(&mut self) -> Error {
-        let ret = if let Some(TokenData::Error(error)) = self.iter.take_token_data() {
-            error
-        } else {
+        let Some(TokenData::Error(error)) = self.iter.take_token_data() else {
             unreachable!();
         };
         self.bump();
-        ret
+        error
     }
 
     pub fn expect_str_token_and_bump(&mut self) -> Box<String> {
-        let ret = if let Some(TokenData::Str { value }) = self.iter.take_token_data() {
-            value
-        } else {
+        let Some(TokenData::Str { value }) = self.iter.take_token_data() else {
             unreachable!();
         };
         self.bump();
-        ret
+        value
     }
 
     pub fn expect_num_token_and_bump(&mut self) -> f64 {
-        let ret = if let Some(TokenData::Num(value)) = self.iter.take_token_data() {
-            value
-        } else {
+        let Some(TokenData::Num(value)) = self.iter.take_token_data() else {
             unreachable!();
         };
         self.bump();
-        ret
+        value
     }
 
     pub fn expect_big_int_token_and_bump(&mut self) -> Box<BigUintValue> {
-        let ret = if let Some(TokenData::BigInt(value)) = self.iter.take_token_data() {
-            value
-        } else {
+        let Some(TokenData::BigInt(value)) = self.iter.take_token_data() else {
             unreachable!();
         };
         self.bump();
-        ret
+        value
     }
 
     pub fn expect_template_token_and_bump(&mut self) -> TplString {
-        let ret = if let Some(TokenData::Template(value)) = self.iter.take_token_data() {
-            value
-        } else {
+        let Some(TokenData::Template(value)) = self.iter.take_token_data() else {
             unreachable!();
         };
         self.bump();
-        ret
+        value
     }
 
     pub fn cur_string(&self) -> &str {

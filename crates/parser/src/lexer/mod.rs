@@ -71,10 +71,10 @@ impl<'src> Lexer<'src> {
             state: State::new(),
             syntax,
             target,
-            ctx: Default::default(),
-            errors: Default::default(),
-            module_errors: Default::default(),
-            strict_errors: Default::default(),
+            ctx: Context::default(),
+            errors: Vec::default(),
+            module_errors: Vec::default(),
+            strict_errors: Vec::default(),
             buf: String::with_capacity(16),
 
             program_data,
@@ -96,7 +96,7 @@ impl<'src> Lexer<'src> {
             if self.state.can_skip_space() {
                 self.skip_space()?;
                 start = self.cur_pos();
-            };
+            }
 
             if let Some(TokenContext::Tpl {
                 start: start_pos_of_tpl,
@@ -214,11 +214,11 @@ impl<'src> Lexer<'src> {
             ZER => {
                 match self.peek_nth(1) {
                     // '0x', '0X' - hex number
-                    Some(b'x') | Some(b'X') => self.read_radix_number(NonDecRadix::Hex),
+                    Some(b'x' | b'X') => self.read_radix_number(NonDecRadix::Hex),
                     // '0o', '0O' - octal number
-                    Some(b'o') | Some(b'O') => self.read_radix_number(NonDecRadix::Oct),
+                    Some(b'o' | b'O') => self.read_radix_number(NonDecRadix::Oct),
                     // '0b', '0B' - binary number
-                    Some(b'b') | Some(b'B') => self.read_radix_number(NonDecRadix::Bin),
+                    Some(b'b' | b'B') => self.read_radix_number(NonDecRadix::Bin),
 
                     _ => self.read_number(false),
                 }
@@ -1101,7 +1101,7 @@ impl<'src> Lexer<'src> {
                         if let Some(cooked) = &mut cooked
                             && let Some(ch) = ch
                         {
-                            cooked.push(ch)
+                            cooked.push(ch);
                         }
                     }
                     Err(_) => {

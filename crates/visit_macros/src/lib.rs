@@ -147,9 +147,9 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
             .inputs
             .iter()
             .nth(1)
-            .map(|v| match *v {
-                FnArg::Typed(ref pat) => &pat.ty,
-                _ => unreachable!(),
+            .map(|v| match &v {
+                FnArg::Typed(pat) => &pat.ty,
+                FnArg::Receiver(_) => unreachable!(),
             })
             .unwrap();
 

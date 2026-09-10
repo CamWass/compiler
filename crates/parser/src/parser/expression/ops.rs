@@ -54,13 +54,7 @@ impl Parser<'_> {
                     Expr::Bin(BinExpr {
                         node_id,
                         left,
-                        op: op!("&&"),
-                        ..
-                    })
-                    | Expr::Bin(BinExpr {
-                        node_id,
-                        left,
-                        op: op!("||"),
+                        op: op!("&&") | op!("||"),
                         ..
                     }) => {
                         if let Expr::Bin(BinExpr { op: op!("??"), .. }) = &**left {

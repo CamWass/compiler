@@ -49,7 +49,7 @@ impl Parser<'_> {
             .position(|s| *s == self.input.cur());
 
         if let Some(pos) = pos {
-            if self.try_parse_ts_bool(|p| Ok(Some(p.ts_next_token_can_follow_modifier())))? {
+            if self.try_parse_ts_bool(|p| Ok(Some(p.ts_next_token_can_follow_modifier()))) {
                 return Ok(Some(allowed_modifiers[pos]));
             }
         }
@@ -187,7 +187,7 @@ impl Parser<'_> {
 
         let start = self.input.cur_pos();
 
-        let has_modifier = self.eat_any_ts_modifier()?;
+        let has_modifier = self.eat_any_ts_modifier();
 
         // Type name:
         self.parse_ts_entity_name(true)?;
@@ -349,7 +349,7 @@ impl Parser<'_> {
 
     /// `tsTryParse`.
     /// `op` should not modify state.
-    fn try_parse_ts_bool<F>(&mut self, op: F) -> PResult<bool>
+    fn try_parse_ts_bool<F>(&mut self, op: F) -> bool
     where
         F: FnOnce(&mut Self) -> PResult<Option<bool>>,
     {
@@ -373,17 +373,14 @@ impl Parser<'_> {
         self.emit_err = false;
         let res = op(self);
 
-        match res {
-            Ok(Some(res)) if res => {
-                self.emit_err = prev_emit_err;
-                Ok(res)
-            }
-            _ => {
-                self.emit_err = old_emit_err;
-                self.input.rewind(input_checkpoint);
+        if let Ok(Some(true)) = res {
+            self.emit_err = prev_emit_err;
+            true
+        } else {
+            self.emit_err = old_emit_err;
+            self.input.rewind(input_checkpoint);
 
-                Ok(false)
-            }
+            false
         }
     }
 
@@ -413,19 +410,16 @@ impl Parser<'_> {
         self.emit_err = false;
         let res = op(self);
 
-        match res {
-            Ok(Some(res)) => {
-                self.emit_err = prev_emit_err;
-                Some(res)
-            }
-            Ok(None) | Err(..) => {
-                self.emit_err = old_emit_err;
-                self.input.rewind(input_checkpoint);
-                self.labels.truncate(prev_labels_len);
-                self.potential_arrow_start = old_potential_arrow_start;
+        if let Ok(Some(res)) = res {
+            self.emit_err = prev_emit_err;
+            Some(res)
+        } else {
+            self.emit_err = old_emit_err;
+            self.input.rewind(input_checkpoint);
+            self.labels.truncate(prev_labels_len);
+            self.potential_arrow_start = old_potential_arrow_start;
 
-                None
-            }
+            None
         }
     }
 
@@ -666,7 +660,7 @@ impl Parser<'_> {
         }
 
         Ok(self.is(tok!('('))
-            && self.ts_look_ahead(Parser::is_ts_unambiguously_start_of_fn_type)?)
+            && self.ts_look_ahead(|p| Ok(p.is_ts_unambiguously_start_of_fn_type()))?)
     }
 
     /// `tsParseTypeAssertion`
@@ -853,41 +847,41 @@ impl Parser<'_> {
     }
 
     /// `tsIsUnambiguouslyStartOfFunctionType`
-    fn is_ts_unambiguously_start_of_fn_type(&mut self) -> PResult<bool> {
+    fn is_ts_unambiguously_start_of_fn_type(&mut self) -> bool {
         debug_assert!(self.syntax().typescript());
 
         self.assert_and_bump(tok!('('));
         if self.is(tok!(')')) || self.is(tok!("...")) {
             // ( )
             // ( ...
-            return Ok(true);
+            return true;
         }
-        if self.skip_ts_parameter_start()? {
+        if self.skip_ts_parameter_start() {
             if self.is(tok!(':')) || self.is(tok!(',')) || self.is(tok!('?')) || self.is(tok!('='))
             {
                 // ( xxx :
                 // ( xxx ,
                 // ( xxx ?
                 // ( xxx =
-                return Ok(true);
+                return true;
             }
             if self.eat(tok!(')')) && self.is(tok!("=>")) {
                 // ( xxx ) =>
-                return Ok(true);
+                return true;
             }
         }
-        Ok(false)
+        false
     }
 
     /// `tsSkipParameterStart`
-    fn skip_ts_parameter_start(&mut self) -> PResult<bool> {
+    fn skip_ts_parameter_start(&mut self) -> bool {
         debug_assert!(self.syntax().typescript());
 
-        let _ = self.eat_any_ts_modifier()?;
+        let _ = self.eat_any_ts_modifier();
 
         if self.is_ident_ref() || self.is(tok!("this")) {
             self.input.bump();
-            return Ok(true);
+            return true;
         }
 
         if self.is(tok!('{')) {
@@ -902,7 +896,7 @@ impl Parser<'_> {
                 }
                 self.input.bump();
             }
-            return Ok(true);
+            return true;
         }
 
         if self.is(tok!('[')) {
@@ -917,10 +911,10 @@ impl Parser<'_> {
                 }
                 self.input.bump();
             }
-            return Ok(true);
+            return true;
         }
 
-        Ok(false)
+        false
     }
 
     /// `tsParseTypeMemberSemicolon`
@@ -960,20 +954,20 @@ impl Parser<'_> {
     }
 
     /// `tsIsUnambiguouslyIndexSignature`
-    fn is_ts_unambiguously_index_signature(&mut self) -> PResult<bool> {
+    fn is_ts_unambiguously_index_signature(&mut self) -> bool {
         debug_assert!(self.syntax().typescript());
 
         // Note: babel's comment is wrong
         self.assert_and_bump(tok!('[')); // Skip '['
 
         // ',' is for error recovery
-        Ok(self.eat_ident_ref() && (self.is(tok!(':')) || self.is(tok!(','))))
+        self.eat_ident_ref() && (self.is(tok!(':')) || self.is(tok!(',')))
     }
 
     /// `tsTryParseIndexSignature`
     pub(super) fn try_parse_ts_index_signature(&mut self) -> PResult<Option<()>> {
         if !(self.is(tok!('['))
-            && self.ts_look_ahead(Parser::is_ts_unambiguously_index_signature)?)
+            && self.ts_look_ahead(|p| Ok(p.is_ts_unambiguously_index_signature()))?)
         {
             return Ok(None);
         }
@@ -1044,7 +1038,9 @@ impl Parser<'_> {
             return self
                 .parse_ts_signature_member(SignatureParsingMode::TSCallSignatureDeclaration);
         }
-        if self.is(tok!("new")) && self.ts_look_ahead(Parser::is_ts_start_of_construct_signature)? {
+        if self.is(tok!("new"))
+            && self.ts_look_ahead(|p| Ok(p.is_ts_start_of_construct_signature()))?
+        {
             return self
                 .parse_ts_signature_member(SignatureParsingMode::TSConstructSignatureDeclaration);
         }
@@ -1100,12 +1096,12 @@ impl Parser<'_> {
     }
 
     /// `tsIsStartOfConstructSignature`
-    fn is_ts_start_of_construct_signature(&mut self) -> PResult<bool> {
+    fn is_ts_start_of_construct_signature(&mut self) -> bool {
         debug_assert!(self.syntax().typescript());
 
         self.input.bump();
 
-        Ok(self.is(tok!('(')) || self.is(tok!('<')))
+        self.is(tok!('(')) || self.is(tok!('<'))
     }
 
     /// `tsParseTypeLiteral`
@@ -1550,13 +1546,11 @@ impl Parser<'_> {
 
         if let Some(operator) = operator {
             self.parse_ts_type_operator(operator)
+        } else if self.is(tok!("infer")) {
+            self.parse_ts_infer_type()
         } else {
-            if self.is(tok!("infer")) {
-                self.parse_ts_infer_type()
-            } else {
-                self.parse_ts_modifier(&[Token::Readonly])?;
-                self.parse_ts_array_type_or_higher()
-            }
+            self.parse_ts_modifier(&[Token::Readonly])?;
+            self.parse_ts_array_type_or_higher()
         }
     }
 

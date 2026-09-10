@@ -131,7 +131,7 @@ impl Parser<'_> {
         })
     }
 
-    pub(super) fn eat_any_ts_modifier(&mut self) -> PResult<bool> {
+    pub(super) fn eat_any_ts_modifier(&mut self) -> bool {
         let has_modifier = self.syntax().typescript()
             && matches!(
                 self.input.cur(),
@@ -149,14 +149,14 @@ impl Parser<'_> {
             ]);
         }
 
-        Ok(has_modifier)
+        has_modifier
     }
 
     /// spec: 'FormalParameter'
     fn parse_formal_param_pat(&mut self) -> PResult<BindingElement> {
         let start = self.input.cur_pos();
 
-        let has_modifier = self.eat_any_ts_modifier()?;
+        let has_modifier = self.eat_any_ts_modifier();
 
         let pat_start = self.input.cur_pos();
         let mut pat = self.parse_binding_element()?;
@@ -995,13 +995,11 @@ impl Parser<'_> {
     }
 
     fn reparse_expr_as_binding_ident(&mut self, expr: Expr) -> BindingIdent {
-        match expr {
-            Expr::Ident(ident) => self.reparse_ident_as_binding_ident(ident),
-
-            _ => {
-                self.emit_err(get_span!(self, expr.node_id()), SyntaxError::InvalidPat);
-                self.create_invalid_binding_ident()
-            }
+        if let Expr::Ident(ident) = expr {
+            self.reparse_ident_as_binding_ident(ident)
+        } else {
+            self.emit_err(get_span!(self, expr.node_id()), SyntaxError::InvalidPat);
+            self.create_invalid_binding_ident()
         }
     }
 

@@ -45,10 +45,10 @@ impl From<String> for NormalizedOutput {
         let manifest_dirs = vec![
             adjust_canonicalization(paths::manifest_dir()),
             paths::manifest_dir().to_string_lossy().to_string(),
-            adjust_canonicalization(paths::manifest_dir()).replace("\\", "\\\\"),
+            adjust_canonicalization(paths::manifest_dir()).replace('\\', "\\\\"),
             paths::manifest_dir()
                 .to_string_lossy()
-                .replace("\\", "\\\\"),
+                .replace('\\', "\\\\"),
         ];
 
         let s = s.replace("\r\n", "\n");
@@ -61,7 +61,7 @@ impl From<String> for NormalizedOutput {
                 for dir in &manifest_dirs {
                     s = s.replace(&**dir, "$DIR");
                 }
-                s = s.replace("\\\\", "\\").replace("\\", "/");
+                s = s.replace("\\\\", "\\").replace('\\', "/");
                 let s = if cfg!(target_os = "windows") {
                     s.replace("//?/$DIR", "$DIR").replace("/?/$DIR", "$DIR")
                 } else {
@@ -100,7 +100,7 @@ fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
 
 #[cfg(target_os = "windows")]
 fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
-    const VERBATIM_PREFIX: &str = r#"\\?\"#;
+    const VERBATIM_PREFIX: &str = r"\\?\";
     let p = p.as_ref().display().to_string();
     if let Some(stripped) = p.strip_prefix(VERBATIM_PREFIX) {
         stripped.to_string()

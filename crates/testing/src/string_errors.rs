@@ -11,7 +11,7 @@ pub(crate) fn new_handler(
     cm: Rc<SourceMapperDyn>,
     treat_err_as_bug: bool,
 ) -> (Handler, BufferedError) {
-    let buf: BufferedError = Default::default();
+    let buf = BufferedError::default();
 
     let e = EmitterWriter::new(Box::new(buf.clone()), Some(cm.clone()), false, true);
 
