@@ -1448,7 +1448,7 @@ struct StaticFunctionData {
 }
 
 impl StaticFunctionData {
-    fn is_valid_arg_index(&self, arg_index: u16) -> bool {
+    fn is_valid_arg_index(self, arg_index: u16) -> bool {
         arg_index < self.tracked_param_count
     }
 }

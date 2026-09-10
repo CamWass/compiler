@@ -350,7 +350,10 @@ where
             self.cfg
                 .create_edge(node, Branch::Unconditional, compute_fall_through(body_node));
 
-            debug_assert!(self.exception_handler.last().map(|handler| handler.node) == Some(node));
+            debug_assert_eq!(
+                self.exception_handler.last().map(|handler| handler.node),
+                Some(node)
+            );
             self.exception_handler.pop();
         }
     }
@@ -1175,8 +1178,9 @@ where
             // When we are done with the TRY block and there is no FINALLY block, then no more exceptions
             // can be handled at this TRY statement, so it can be taken out of the
             // stack.
-            debug_assert!(
-                self.exception_handler.last().map(|handler| handler.node) == Some(try_node)
+            debug_assert_eq!(
+                self.exception_handler.last().map(|handler| handler.node),
+                Some(try_node)
             );
             self.exception_handler.pop();
         }
@@ -1189,8 +1193,9 @@ where
             // When we are done with both the TRY and CATCH block, then no more exceptions
             // can be handled at this TRY statement, so it can be taken out of the
             // stack.
-            debug_assert!(
-                self.exception_handler.last().map(|handler| handler.node) == Some(try_node)
+            debug_assert_eq!(
+                self.exception_handler.last().map(|handler| handler.node),
+                Some(try_node)
             );
             self.exception_handler.pop();
 

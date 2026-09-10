@@ -85,7 +85,7 @@ where
                             count: 1,
                         };
                         let idx = colouring.partitions.push(p);
-                        debug_assert!(idx == colour);
+                        debug_assert_eq!(idx, colour);
                     }
                     false
                 } else {
