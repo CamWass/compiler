@@ -114,7 +114,7 @@ cfg_select! {
 
                     // If the bit mask is all zero, we only have ASCII chars here:
                     if multibyte_mask == 0 {
-                        assert!(intra_chunk_offset == 0);
+                        assert_eq!(intra_chunk_offset, 0);
 
                         // Check if there are any control characters in the chunk. All
                         // control characters that we can encounter at this point have a

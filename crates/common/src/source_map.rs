@@ -378,13 +378,11 @@ impl SourceMap {
     ///    * the lhs span needs to end on the same line the rhs span begins
     ///    * the lhs span must start at or before the rhs span
     pub fn merge_spans(&self, sp_lhs: Span, sp_rhs: Span) -> Option<Span> {
-        let lhs_end = match self.lookup_line(sp_lhs.hi()) {
-            Ok(x) => x,
-            Err(_) => return None,
+        let Ok(lhs_end) = self.lookup_line(sp_lhs.hi()) else {
+            return None;
         };
-        let rhs_begin = match self.lookup_line(sp_rhs.lo()) {
-            Ok(x) => x,
-            Err(_) => return None,
+        let Ok(rhs_begin) = self.lookup_line(sp_rhs.lo()) else {
+            return None;
         };
 
         // if we must cross lines to merge, don't merge
@@ -615,7 +613,7 @@ impl SourceMap {
             let offset = snippet
                 .chars()
                 .take_while(predicate)
-                .map(|c| c.len_utf8())
+                .map(char::len_utf8)
                 .sum::<usize>();
 
             sp.with_hi(BytePos(sp.lo().0 + (offset as u32)))
@@ -752,7 +750,7 @@ impl SourceMap {
     }
 
     pub fn get_source_file(&self, filename: &FileName) -> Option<Rc<SourceFile>> {
-        for sf in self.files.borrow().source_files.iter() {
+        for sf in &self.files.borrow().source_files {
             if *filename == sf.name {
                 return Some(sf.clone());
             }

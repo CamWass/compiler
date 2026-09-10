@@ -243,7 +243,7 @@ impl fmt::Display for FatalError {
 }
 
 impl error::Error for FatalError {
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "The parser has encountered a fatal error"
     }
 }
@@ -260,7 +260,7 @@ impl fmt::Display for ExplicitBug {
 }
 
 impl error::Error for ExplicitBug {
-    fn description(&self) -> &str {
+    fn description(&self) -> &'static str {
         "The parser has encountered an internal bug"
     }
 }
@@ -380,9 +380,9 @@ impl Handler {
             emitter: Lock::new(e),
             continue_after_error: LockCell::new(true),
             delayed_span_bugs: Lock::new(Vec::new()),
-            taught_diagnostics: Default::default(),
-            emitted_diagnostic_codes: Default::default(),
-            emitted_diagnostics: Default::default(),
+            taught_diagnostics: Lock::default(),
+            emitted_diagnostic_codes: Lock::default(),
+            emitted_diagnostics: Lock::default(),
         }
     }
 
@@ -399,7 +399,7 @@ impl Handler {
     /// emitted error diagnostics.
     pub fn reset_err_count(&self) {
         // actually frees the underlying memory (which `clear` would not do)
-        *self.emitted_diagnostics.borrow_mut() = Default::default();
+        *self.emitted_diagnostics.borrow_mut() = HashSet::default();
         self.err_count.store(0, SeqCst);
     }
 
@@ -573,7 +573,7 @@ impl Handler {
         db
     }
     pub fn span_unimpl<S: Into<MultiSpan>>(&self, sp: S, msg: &str) -> ! {
-        self.span_bug(sp, &format!("unimplemented {}", msg));
+        self.span_bug(sp, &format!("unimplemented {msg}"));
     }
     pub fn failure(&self, msg: &str) {
         DiagnosticBuilder::new(self, FailureNote, msg).emit();

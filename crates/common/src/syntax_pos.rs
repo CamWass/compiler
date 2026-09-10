@@ -53,12 +53,12 @@ impl std::fmt::Display for FileName {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FileName::Real(path) => write!(fmt, "{}", path.display()),
-            FileName::Macros(name) => write!(fmt, "<{} macros>", name),
+            FileName::Macros(name) => write!(fmt, "<{name} macros>"),
             FileName::QuoteExpansion => write!(fmt, "<quote expansion>"),
             FileName::MacroExpansion => write!(fmt, "<macro expansion>"),
             FileName::Anon => write!(fmt, "<anon>"),
             FileName::ProcMacroSourceCode => write!(fmt, "<proc-macro source code>"),
-            FileName::Custom(s) => write!(fmt, "<{}>", s),
+            FileName::Custom(s) => write!(fmt, "<{s}>"),
         }
     }
 }
@@ -256,7 +256,7 @@ impl MultiSpan {
 
     /// Selects the first primary span (if any)
     pub fn primary_span(&self) -> Option<Span> {
-        self.primary_spans.first().cloned()
+        self.primary_spans.first().copied()
     }
 
     /// Returns all primary spans.
@@ -367,7 +367,7 @@ impl NonNarrowChar {
             0 => NonNarrowChar::ZeroWidth(pos),
             2 => NonNarrowChar::Wide(pos),
             4 => NonNarrowChar::Tab(pos),
-            _ => panic!("width {} given for non-narrow character", width),
+            _ => panic!("width {width} given for non-narrow character"),
         }
     }
 
