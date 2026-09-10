@@ -60,6 +60,8 @@ pub struct PassConfig {
     pub remove_dead_code: bool,
     #[serde(default)]
     pub collapse_variable_declarations: bool,
+    #[serde(default)]
+    pub substitute_alternate_syntax: bool,
 }
 
 pub struct Compiler;
@@ -214,7 +216,11 @@ fn late_peephole_optimisations(
     }
 
     //         new PeepholeMinimizeConditions(late),
-    //         new PeepholeSubstituteAlternateSyntax(late),
+
+    if passes.substitute_alternate_syntax {
+        peephole::substitute_alternate_syntax::process(ast, program_data, true);
+    }
+
     //         new PeepholeReplaceKnownMethods(late, useTypesForOptimization),
     //         new PeepholeFoldConstants(late, useTypesForOptimization),
     //   })

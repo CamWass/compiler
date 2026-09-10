@@ -769,7 +769,7 @@ pub fn isLiteralValue(expr: &Expr, includeFunctions: bool) -> bool {
 }
 
 /** Returns true if this is an immutable value. */
-fn isImmutableValue(expr: &Expr) -> bool {
+pub fn isImmutableValue(expr: &Expr) -> bool {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,

@@ -10,6 +10,7 @@ use crate::node_util::{
 pub mod fold_constants;
 pub mod fuse_stmts;
 pub mod remove_dead_code;
+pub mod substitute_alternate_syntax;
 
 /**
  * Returns the number value of the node if it has one and it cannot have side effects.

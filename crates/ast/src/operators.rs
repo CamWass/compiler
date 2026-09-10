@@ -100,6 +100,39 @@ impl BinaryOp {
             BinaryOp::NullishCoalescing => 1,
         }
     }
+
+    /// Returns true if the operator is associative i.e.
+    /// (a * b) * c = a * (b * c).
+    ///
+    /// Note: "+" is not associative because it is also the concatenation
+    /// operator for strings e.g. "a" + (1 + 2) is not "a" + 1 + 2.
+    /// Multiplication is not associative because it can include floating point
+    /// numbers e.g. 1e-300 * 1e300 * 1e9 does not equal 1e-300 * (1e300 * 1e9).
+    pub fn is_associative(self) -> bool {
+        match self {
+            BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing
+            | BinaryOp::BitOr
+            | BinaryOp::BitXor
+            | BinaryOp::BitAnd => true,
+            _ => false,
+        }
+    }
+
+    /// Returns true if the operator is commutative i.e
+    /// (a * b) * c = c * (b * a).
+    ///
+    /// Note:
+    /// - "+" is not commutative because it is also the concatenation operator
+    ///   for strings e.g. "a" + (1 + 2) is not "a" + 1 + 2.
+    /// - only operations on literals and pure functions are commutative.
+    pub fn is_commutative(self) -> bool {
+        match self {
+            BinaryOp::Mul | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::BitAnd => true,
+            _ => false,
+        }
+    }
 }
 
 impl BinaryOp {

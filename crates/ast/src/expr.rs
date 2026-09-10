@@ -344,6 +344,12 @@ pub enum SimpleAssignTarget {
     Member(MemberExpr),
 }
 
+impl Take for SimpleAssignTarget {
+    fn dummy() -> Self {
+        SimpleAssignTarget::Ident(BindingIdent::from_ident(Ident::dummy()))
+    }
+}
+
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct OptChainExpr {
     pub node_id: NodeId,
