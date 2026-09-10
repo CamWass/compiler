@@ -47,7 +47,7 @@ const fn str_eq(a: &str, b: &str) -> bool {
 }
 
 macro_rules! make_built_ins {
-    ($($name:tt),* $(,)?) => {
+    ($($name:literal),* $(,)?) => {
         // Use $crate::paste so consuming crates don't need `paste` in their Cargo.toml:
         $crate::paste::paste! {
             const BUILT_IN_NAMES: &[&str] = &[$(stringify!($name)),*];
