@@ -53,53 +53,53 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    pub fn emit_program(&mut self, node: &Program) -> Result {
+    pub fn emit_program(&mut self, node: &Program) {
         match node {
             Program::Module(m) => self.emit_module(m),
             Program::Script(s) => self.emit_script(s),
         }
     }
 
-    pub fn emit_module(&mut self, node: &Module) -> Result {
+    pub fn emit_module(&mut self, node: &Module) {
         for stmt in &node.body {
-            self.emit_module_item(stmt, true)?;
+            self.emit_module_item(stmt, true);
         }
-        Ok(())
     }
 
-    pub fn emit_script(&mut self, node: &Script) -> Result {
+    pub fn emit_script(&mut self, node: &Script) {
         for stmt in &node.body {
-            self.emit_stmt(stmt, true)?;
+            self.emit_stmt(stmt, true);
         }
-        Ok(())
     }
 
-    fn emit_module_item(&mut self, node: &ModuleItem, ignore_empty: bool) -> Result {
+    fn emit_module_item(&mut self, node: &ModuleItem, ignore_empty: bool) {
         match node {
             ModuleItem::Stmt(stmt) => self.emit_stmt(stmt, ignore_empty),
             ModuleItem::ModuleDecl(decl) => self.emit_module_decl(decl),
         }
     }
 
-    fn emit_module_decl(&mut self, node: &ModuleDecl) -> Result {
+    fn emit_module_decl(&mut self, node: &ModuleDecl) {
         match node {
             ModuleDecl::Import(d) => self.emit_import(d),
             ModuleDecl::ExportDecl(d) => self.emit_export_decl(d),
             ModuleDecl::ExportNamed(d) => self.emit_named_export(d),
             ModuleDecl::ExportDefaultDecl(d) => self.emit_export_default_decl(d),
             ModuleDecl::ExportDefaultExpr(n) => self.emit_export_default_expr(n),
-            ModuleDecl::ExportAll(d) => self.emit_export_all(d),
-        }?;
-        self.wr.write_line()
+            ModuleDecl::ExportAll(d) => {
+                self.emit_export_all(d);
+            }
+        }
+        self.wr.write_line();
     }
 
-    fn emit_export_decl(&mut self, node: &ExportDecl) -> Result {
+    fn emit_export_decl(&mut self, node: &ExportDecl) {
         keyword!(self, "export");
         space!(self);
-        self.emit_decl(&node.decl)
+        self.emit_decl(&node.decl);
     }
 
-    fn emit_export_default_expr(&mut self, node: &ExportDefaultExpr) -> Result {
+    fn emit_export_default_expr(&mut self, node: &ExportDefaultExpr) {
         keyword!(self, "export");
         space!(self);
         keyword!(self, "default");
@@ -114,7 +114,7 @@ impl<'a> Emitter<'a> {
         let old = self.ctx;
         self.ctx = Context::Default;
 
-        if !needs_parens && self.expr_starts_with_alpha_num(&node.expr)? {
+        if !needs_parens && self.expr_starts_with_alpha_num(&node.expr) {
             space!(self);
         } else {
             formatting_space!(self);
@@ -122,19 +122,18 @@ impl<'a> Emitter<'a> {
 
         if needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.expr)?;
+            self.emit_expr(&node.expr);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.expr)?;
+            self.emit_expr(&node.expr);
         }
 
         self.ctx = old;
 
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_export_default_decl(&mut self, node: &ExportDefaultDecl) -> Result {
+    fn emit_export_default_decl(&mut self, node: &ExportDefaultDecl) {
         keyword!(self, "export");
         space!(self);
         keyword!(self, "default");
@@ -142,12 +141,11 @@ impl<'a> Emitter<'a> {
         match &node.decl {
             DefaultDecl::Class(n) => self.emit_class_expr(n),
             DefaultDecl::Fn(n) => self.emit_fn_expr(n),
-        }?;
+        }
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_import(&mut self, node: &ImportDecl) -> Result {
+    fn emit_import(&mut self, node: &ImportDecl) {
         let span = get_span!(self, node.node_id);
 
         keyword!(self, "import");
@@ -168,7 +166,7 @@ impl<'a> Emitter<'a> {
                     specifiers.push(s);
                 }
                 ImportSpecifier::Default(s) => {
-                    self.emit_ident(&s.local)?;
+                    self.emit_ident(&s.local);
                     emitted_default = true;
                 }
                 ImportSpecifier::Namespace(ns) => {
@@ -184,7 +182,7 @@ impl<'a> Emitter<'a> {
                     formatting_space!(self);
                     keyword!(self, "as");
                     space!(self);
-                    self.emit_ident(&ns.local)?;
+                    self.emit_ident(&ns.local);
                 }
             }
         }
@@ -206,7 +204,7 @@ impl<'a> Emitter<'a> {
                 &specifiers,
                 |e, n| e.emit_import_specifier(n),
                 ListFormat::NamedImportsOrExportsElements,
-            )?;
+            );
             punct!(self, "}");
             formatting_space!(self);
 
@@ -214,23 +212,22 @@ impl<'a> Emitter<'a> {
         }
 
         formatting_space!(self);
-        self.emit_str_lit(&node.src)?;
+        self.emit_str_lit(&node.src);
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_import_specifier(&mut self, node: &ImportNamedSpecifier) -> Result {
+    fn emit_import_specifier(&mut self, node: &ImportNamedSpecifier) {
         if let Some(imported) = &node.imported {
-            self.emit_ident(imported)?;
+            self.emit_ident(imported);
             space!(self);
             keyword!(self, "as");
             space!(self);
         }
 
-        self.emit_ident(&node.local)
+        self.emit_ident(&node.local);
     }
 
-    fn emit_export_specifier(&mut self, node: &ExportSpecifier) -> Result {
+    fn emit_export_specifier(&mut self, node: &ExportSpecifier) {
         match node {
             ExportSpecifier::Default(_) => {
                 unimplemented!("codegen of `export default from 'foo';`")
@@ -240,27 +237,27 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn emit_namespace_export_specifier(&mut self, node: &ExportNamespaceSpecifier) -> Result {
+    fn emit_namespace_export_specifier(&mut self, node: &ExportNamespaceSpecifier) {
         punct!(self, "*");
         formatting_space!(self);
         keyword!(self, "as");
         space!(self);
-        self.emit_ident(&node.name)
+        self.emit_ident(&node.name);
     }
 
-    fn emit_named_export_specifier(&mut self, node: &ExportNamedSpecifier) -> Result {
+    fn emit_named_export_specifier(&mut self, node: &ExportNamedSpecifier) {
         if let Some(exported) = &node.exported {
-            self.emit_ident(&node.orig)?;
+            self.emit_ident(&node.orig);
             space!(self);
             keyword!(self, "as");
             space!(self);
-            self.emit_ident(exported)
+            self.emit_ident(exported);
         } else {
-            self.emit_ident(&node.orig)
+            self.emit_ident(&node.orig);
         }
     }
 
-    fn emit_named_export(&mut self, node: &NamedExport) -> Result {
+    fn emit_named_export(&mut self, node: &NamedExport) {
         let span = get_span!(self, node.node_id);
 
         let mut namespace_spec: Option<&ExportNamespaceSpecifier> = None;
@@ -286,7 +283,7 @@ impl<'a> Emitter<'a> {
         keyword!(self, "export");
         formatting_space!(self);
         if let Some(spec) = namespace_spec {
-            self.emit_namespace_export_specifier(spec)?;
+            self.emit_namespace_export_specifier(spec);
             if has_named_specs {
                 punct!(self, ",");
                 formatting_space!(self);
@@ -299,7 +296,7 @@ impl<'a> Emitter<'a> {
                 &named_specs,
                 |e, n| e.emit_export_specifier(n),
                 ListFormat::NamedImportsOrExportsElements,
-            )?;
+            );
             punct!(self, "}");
         }
 
@@ -311,25 +308,23 @@ impl<'a> Emitter<'a> {
             }
             keyword!(self, "from");
             formatting_space!(self);
-            self.emit_str_lit(src)?;
+            self.emit_str_lit(src);
         }
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_export_all(&mut self, node: &ExportAll) -> Result {
+    fn emit_export_all(&mut self, node: &ExportAll) {
         keyword!(self, "export");
         formatting_space!(self);
         punct!(self, "*");
         formatting_space!(self);
         keyword!(self, "from");
         formatting_space!(self);
-        self.emit_str_lit(&node.src)?;
+        self.emit_str_lit(&node.src);
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_lit(&mut self, node: &Lit) -> Result {
+    fn emit_lit(&mut self, node: &Lit) {
         let span = get_span!(self, node.node_id());
 
         match node {
@@ -341,51 +336,45 @@ impl<'a> Emitter<'a> {
                 }
             }
             Lit::Null(_) => keyword!(self, span, "null"),
-            Lit::Str(s) => self.emit_str_lit(s)?,
-            Lit::BigInt(s) => self.emit_big_lit(s)?,
-            Lit::Num(n) => self.emit_num_lit(n)?,
-            Lit::Regex(n) => self.emit_regex_lit(n)?,
+            Lit::Str(s) => self.emit_str_lit(s),
+            Lit::BigInt(s) => self.emit_big_lit(s),
+            Lit::Num(n) => self.emit_num_lit(n),
+            Lit::Regex(n) => self.emit_regex_lit(n),
         }
-        Ok(())
     }
 
-    fn emit_regex_lit(&mut self, node: &Regex) -> Result {
+    fn emit_regex_lit(&mut self, node: &Regex) {
         let span = get_span!(self, node.node_id());
 
-        self.wr.write_lit(span, &node.raw)
+        self.wr.write_lit(span, &node.raw);
     }
 
-    fn emit_str_lit(&mut self, node: &Str) -> Result {
-        self.wr.commit_pending_semi()?;
+    fn emit_str_lit(&mut self, node: &Str) {
+        self.wr.commit_pending_semi();
 
         let target = self.cfg.target;
         // TODO: would be great to not call this for all strings.
         let value = get_quoted_utf16(&node.value, target);
-        self.wr.write_str_lit(DUMMY_SP, &value)
+        self.wr.write_str_lit(DUMMY_SP, &value);
     }
 
-    fn emit_num_lit(&mut self, num: &Number) -> Result {
-        self.emit_num_lit_internal(num, false)?;
-        Ok(())
+    fn emit_num_lit(&mut self, num: &Number) {
+        self.emit_num_lit_internal(num, false);
     }
 
     /// `1.toString` is an invalid property access,
     /// should emit a dot after the literal if return true
-    fn emit_num_lit_internal(
-        &mut self,
-        num: &Number,
-        detect_dot: bool,
-    ) -> std::result::Result<bool, io::Error> {
+    fn emit_num_lit_internal(&mut self, num: &Number, detect_dot: bool) -> bool {
         let span = get_span!(self, num.node_id);
 
         // Handle infinity
         if num.value.is_infinite() {
             if num.value.is_sign_negative() {
-                self.wr.write_str_lit(span, "-")?;
+                self.wr.write_str_lit(span, "-");
             }
-            self.wr.write_str_lit(span, "Infinity")?;
+            self.wr.write_str_lit(span, "Infinity");
 
-            return Ok(false);
+            return false;
         }
 
         let value = if self.cfg.minify {
@@ -393,42 +382,41 @@ impl<'a> Emitter<'a> {
         } else {
             num.value.to_string()
         };
-        self.wr.write_str_lit(span, &value)?;
+        self.wr.write_str_lit(span, &value);
 
         // fast return
         if !detect_dot {
-            return Ok(false);
+            return false;
         }
 
         let bytes = value.as_bytes();
 
         if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
-            return Ok(true);
+            return true;
         }
 
-        Ok(false)
+        false
     }
 
-    fn emit_big_lit(&mut self, v: &BigInt) -> Result {
+    fn emit_big_lit(&mut self, v: &BigInt) {
         let span = get_span!(self, v.node_id);
 
-        self.wr.write_lit(span, v.value.as_str())?;
-        self.wr.write_lit(span, "n")
+        self.wr.write_lit(span, v.value.as_str());
+        self.wr.write_lit(span, "n");
     }
 
-    fn emit_expr_or_super(&mut self, node: &ExprOrSuper) -> Result {
+    fn emit_expr_or_super(&mut self, node: &ExprOrSuper) {
         match node {
             ExprOrSuper::Expr(e) => self.emit_expr(e),
             ExprOrSuper::Super(n) => self.emit_super(n),
         }
     }
 
-    fn emit_super(&mut self, node: &Super) -> Result {
+    fn emit_super(&mut self, node: &Super) {
         keyword!(self, get_span!(self, node.node_id), "super");
-        Ok(())
     }
 
-    fn emit_expr(&mut self, node: &Expr) -> Result {
+    fn emit_expr(&mut self, node: &Expr) {
         let ctx = self.ctx;
 
         let in_expr_stmt_seq = self.flags.intersects(Flags::in_expr_stmt_seq);
@@ -462,13 +450,11 @@ impl<'a> Emitter<'a> {
 
                 if needs_parens {
                     punct!(self, "(");
-                    self.emit_assign_expr(n)?;
+                    self.emit_assign_expr(n);
                     punct!(self, ")");
                 } else {
-                    self.emit_assign_expr(n)?;
+                    self.emit_assign_expr(n);
                 }
-
-                Ok(())
             }
             Expr::Await(n) => self.emit_await_expr(n),
             Expr::Bin(n) => {
@@ -480,12 +466,11 @@ impl<'a> Emitter<'a> {
 
                 if n.op == op!("in") && self.flags.contains(Flags::in_for_stmt_head) {
                     punct!(self, "(");
-                    self.emit_bin_expr(n, wrap_left)?;
+                    self.emit_bin_expr(n, wrap_left);
                     punct!(self, ")");
                 } else {
-                    self.emit_bin_expr(n, wrap_left)?;
+                    self.emit_bin_expr(n, wrap_left);
                 }
-                Ok(())
             }
             Expr::Call(n) => {
                 let mut wrap_expr = false;
@@ -512,23 +497,20 @@ impl<'a> Emitter<'a> {
                 };
                 if wrap_expr {
                     punct!(self, "(");
-                    self.emit_call_expr(n, wrap_callee)?;
+                    self.emit_call_expr(n, wrap_callee);
                     punct!(self, ")");
                 } else {
-                    self.emit_call_expr(n, wrap_callee)?;
+                    self.emit_call_expr(n, wrap_callee);
                 }
-
-                Ok(())
             }
             Expr::Class(n) => {
                 if in_expr_stmt_seq {
                     punct!(self, "(");
-                    self.emit_class_expr(n)?;
+                    self.emit_class_expr(n);
                     punct!(self, ")");
                 } else {
-                    self.emit_class_expr(n)?;
+                    self.emit_class_expr(n);
                 }
-                Ok(())
             }
             Expr::Cond(n) => {
                 let wrap_test = matches!(
@@ -537,23 +519,20 @@ impl<'a> Emitter<'a> {
                 ) && ctx == Context::Default;
                 if ctx == Context::NewCallee {
                     punct!(self, "(");
-                    self.emit_cond_expr(n, wrap_test)?;
+                    self.emit_cond_expr(n, wrap_test);
                     punct!(self, ")");
                 } else {
-                    self.emit_cond_expr(n, wrap_test)?;
+                    self.emit_cond_expr(n, wrap_test);
                 }
-
-                Ok(())
             }
             Expr::Fn(n) => {
                 if in_expr_stmt_seq {
                     punct!(self, "(");
-                    self.emit_fn_expr(n)?;
+                    self.emit_fn_expr(n);
                     punct!(self, ")");
                 } else {
-                    self.emit_fn_expr(n)?;
+                    self.emit_fn_expr(n);
                 }
-                Ok(())
             }
             Expr::Ident(n) => self.emit_ident(n),
             Expr::Lit(n) => self.emit_lit(n),
@@ -563,24 +542,21 @@ impl<'a> Emitter<'a> {
             Expr::Object(n) => {
                 if in_expr_stmt_seq {
                     punct!(self, "(");
-                    self.emit_object_lit(n)?;
+                    self.emit_object_lit(n);
                     punct!(self, ")");
                 } else {
-                    self.emit_object_lit(n)?;
+                    self.emit_object_lit(n);
                 }
-                Ok(())
             }
             Expr::Seq(n) => {
                 if ctx == Context::ForcedExpr {
                     punct!(self, "(");
-                    self.emit_seq_expr(n)?;
+                    self.emit_seq_expr(n);
                     punct!(self, ")");
                 } else {
                     self.flags.set(Flags::in_expr_stmt_seq, in_expr_stmt_seq);
-                    self.emit_seq_expr(n)?;
+                    self.emit_seq_expr(n);
                 }
-
-                Ok(())
             }
             Expr::TaggedTpl(n) => self.emit_tagged_tpl_lit(n),
             Expr::This(n) => self.emit_this_expr(n),
@@ -617,37 +593,35 @@ impl<'a> Emitter<'a> {
                 }
                 if wrap_expr {
                     punct!(self, "(");
-                    self.emit_opt_chain(n, wrap_callee)?;
+                    self.emit_opt_chain(n, wrap_callee);
                     punct!(self, ")");
                 } else {
-                    self.emit_opt_chain(n, wrap_callee)?;
+                    self.emit_opt_chain(n, wrap_callee);
                 }
-                Ok(())
             }
-        }?;
+        }
 
         self.flags = old_flags;
 
         self.ctx = ctx;
-        Ok(())
     }
 
-    fn emit_opt_chain(&mut self, n: &OptChainExpr, wrap_callee: bool) -> Result {
+    fn emit_opt_chain(&mut self, n: &OptChainExpr, wrap_callee: bool) {
         let span = get_span!(self, n.node_id);
 
         match n.base.as_ref() {
             OptChainBase::Member(e) => {
                 let old_flags = self.flags;
                 self.flags.set(Flags::in_opt_chain, true);
-                self.emit_expr_or_super(&e.obj)?;
+                self.emit_expr_or_super(&e.obj);
                 punct!(self, "?.");
 
                 if e.computed {
                     punct!(self, "[");
-                    self.emit_expr(&e.prop)?;
+                    self.emit_expr(&e.prop);
                     punct!(self, "]");
                 } else {
-                    self.emit_expr(&e.prop)?;
+                    self.emit_expr(&e.prop);
                 }
                 self.flags = old_flags;
             }
@@ -679,14 +653,12 @@ impl<'a> Emitter<'a> {
                 match &e.callee {
                     ExprOrSuper::Expr(callee) => {
                         if let Expr::New(new) = callee.as_ref() {
-                            self.emit_new(new, false)?;
+                            self.emit_new(new, false);
                         } else {
-                            self.emit_expr(callee)?;
+                            self.emit_expr(callee);
                         }
                     }
-                    ExprOrSuper::Super(callee) => {
-                        self.emit_super(callee)?;
-                    }
+                    ExprOrSuper::Super(callee) => self.emit_super(callee),
                 }
 
                 self.flags = old_flags;
@@ -698,15 +670,14 @@ impl<'a> Emitter<'a> {
 
                 self.ctx = Context::ForcedExpr;
                 punct!(self, "(");
-                self.emit_expr_or_spreads(span, &e.args, ListFormat::CallExpressionArguments)?;
+                self.emit_expr_or_spreads(span, &e.args, ListFormat::CallExpressionArguments);
                 punct!(self, ")");
                 self.ctx = ctx;
             }
         }
-        Ok(())
     }
 
-    fn emit_call_expr(&mut self, node: &CallExpr, wrap_callee: bool) -> Result {
+    fn emit_call_expr(&mut self, node: &CallExpr, wrap_callee: bool) {
         let ctx = std::mem::replace(&mut self.ctx, Context::FnCallee);
 
         let span = get_span!(self, node.node_id);
@@ -714,7 +685,7 @@ impl<'a> Emitter<'a> {
         match &node.callee {
             ExprOrSuper::Expr(callee) => {
                 if let Expr::New(new) = callee.as_ref() {
-                    self.emit_new(new, false)?;
+                    self.emit_new(new, false);
                 } else {
                     let needs_parens = wrap_callee
                         || match callee.as_ref() {
@@ -734,27 +705,24 @@ impl<'a> Emitter<'a> {
                         };
                     if needs_parens {
                         punct!(self, "(");
-                        self.emit_expr(callee)?;
+                        self.emit_expr(callee);
                         punct!(self, ")");
                     } else {
-                        self.emit_expr(callee)?;
+                        self.emit_expr(callee);
                     }
                 }
             }
-            ExprOrSuper::Super(callee) => {
-                self.emit_super(callee)?;
-            }
+            ExprOrSuper::Super(callee) => self.emit_super(callee),
         }
 
         punct!(self, "(");
         self.ctx = Context::ForcedExpr;
-        self.emit_expr_or_spreads(span, &node.args, ListFormat::CallExpressionArguments)?;
+        self.emit_expr_or_spreads(span, &node.args, ListFormat::CallExpressionArguments);
         punct!(self, ")");
         self.ctx = ctx;
-        Ok(())
     }
 
-    fn emit_new(&mut self, node: &NewExpr, should_ignore_empty_args: bool) -> Result {
+    fn emit_new(&mut self, node: &NewExpr, should_ignore_empty_args: bool) {
         let span = get_span!(self, node.node_id);
 
         {
@@ -775,17 +743,17 @@ impl<'a> Emitter<'a> {
         );
 
         let ctx = std::mem::replace(&mut self.ctx, Context::NewCallee);
-        if !callee_needs_parens && self.expr_starts_with_alpha_num(&node.callee)? {
+        if !callee_needs_parens && self.expr_starts_with_alpha_num(&node.callee) {
             space!(self);
         } else {
             formatting_space!(self);
         }
         if callee_needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.callee)?;
+            self.emit_expr(&node.callee);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.callee)?;
+            self.emit_expr(&node.callee);
         }
         self.ctx = ctx;
 
@@ -793,20 +761,18 @@ impl<'a> Emitter<'a> {
             if !(self.cfg.minify && args.is_empty() && should_ignore_empty_args) {
                 punct!(self, "(");
                 let ctx = std::mem::replace(&mut self.ctx, Context::ForcedExpr);
-                self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
+                self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments);
                 self.ctx = ctx;
                 punct!(self, ")");
             }
         }
-
-        Ok(())
     }
 
-    fn emit_new_expr(&mut self, node: &NewExpr) -> Result {
-        self.emit_new(node, true)
+    fn emit_new_expr(&mut self, node: &NewExpr) {
+        self.emit_new(node, true);
     }
 
-    fn emit_member_expr(&mut self, node: &MemberExpr) -> Result {
+    fn emit_member_expr(&mut self, node: &MemberExpr) {
         let mut needs_2dots_for_property_access = false;
 
         let in_assign_lhs_member_expr = self.flags.intersects(Flags::in_assign_lhs_member_expr);
@@ -817,19 +783,19 @@ impl<'a> Emitter<'a> {
                 Expr::New(new) => {
                     if new.args.is_none() {
                         punct!(self, "(");
-                        self.emit_new(new, false)?;
+                        self.emit_new(new, false);
                         punct!(self, ")");
                     } else {
-                        self.emit_new(new, false)?;
+                        self.emit_new(new, false);
                     }
                 }
                 Expr::Lit(Lit::Num(num)) => {
                     if num.value.signum() == -1. {
                         punct!(self, "(");
-                        needs_2dots_for_property_access = self.emit_num_lit_internal(num, true)?;
+                        needs_2dots_for_property_access = self.emit_num_lit_internal(num, true);
                         punct!(self, ")");
                     } else {
-                        needs_2dots_for_property_access = self.emit_num_lit_internal(num, true)?;
+                        needs_2dots_for_property_access = self.emit_num_lit_internal(num, true);
                     }
                 }
                 _ => {
@@ -857,22 +823,20 @@ impl<'a> Emitter<'a> {
                     }
                     if needs_parens {
                         punct!(self, "(");
-                        self.emit_expr(obj)?;
+                        self.emit_expr(obj);
                         punct!(self, ")");
                     } else {
-                        self.emit_expr(obj)?;
+                        self.emit_expr(obj);
                     }
                     self.flags.set(Flags::in_assign_lhs_member_expr, false);
                 }
             },
-            ExprOrSuper::Super(obj) => {
-                self.emit_super(obj)?;
-            }
+            ExprOrSuper::Super(obj) => self.emit_super(obj),
         }
 
         if node.computed {
             punct!(self, "[");
-            self.emit_expr(&node.prop)?;
+            self.emit_expr(&node.prop);
             punct!(self, "]");
         } else {
             match node.prop.as_ref() {
@@ -881,22 +845,21 @@ impl<'a> Emitter<'a> {
                         punct!(self, ".");
                     }
                     punct!(self, ".");
-                    self.emit_ident(ident)?;
+                    self.emit_ident(ident);
                 }
                 Expr::PrivateName(private) => {
                     if needs_2dots_for_property_access {
                         punct!(self, ".");
                     }
                     punct!(self, ".");
-                    self.emit_private_name(private)?;
+                    self.emit_private_name(private);
                 }
                 _ => unreachable!(),
             }
         }
-        Ok(())
     }
 
-    fn emit_arrow_expr(&mut self, node: &ArrowExpr) -> Result {
+    fn emit_arrow_expr(&mut self, node: &ArrowExpr) {
         let span = get_span!(self, node.node_id);
 
         let space = !self.cfg.minify
@@ -939,7 +902,7 @@ impl<'a> Emitter<'a> {
         let old = self.ctx;
         self.ctx = Context::Default;
 
-        self.emit_function_params(span, &node.params)?;
+        self.emit_function_params(span, &node.params);
         if parens {
             punct!(self, ")");
         }
@@ -949,7 +912,7 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         if node.body.stmts.len() == 1 {
             if let Stmt::Return(ret) = &node.body.stmts[0] {
-                self.wr.increase_indent()?;
+                self.wr.increase_indent();
                 if let Some(expr) = &ret.arg {
                     let needs_parens = match expr.as_ref() {
                         Expr::Seq(_) | Expr::Object(_) => true,
@@ -960,36 +923,35 @@ impl<'a> Emitter<'a> {
                     };
                     if needs_parens {
                         punct!(self, "(");
-                        self.emit_expr(expr)?;
+                        self.emit_expr(expr);
                         punct!(self, ")");
                     } else {
-                        self.emit_expr(expr)?;
+                        self.emit_expr(expr);
                     }
                 } else {
                     punct!(self, "{");
                     punct!(self, "}");
                 }
-                self.wr.decrease_indent()?;
+                self.wr.decrease_indent();
                 if !self.cfg.minify {
-                    self.wr.write_line()?;
+                    self.wr.write_line();
                 }
             } else {
-                self.emit_block_stmt(&node.body)?;
+                self.emit_block_stmt(&node.body);
             }
         } else {
-            self.emit_block_stmt(&node.body)?;
+            self.emit_block_stmt(&node.body);
         }
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_meta_prop_expr(&mut self, node: &MetaPropExpr) -> Result {
-        self.emit_ident(&node.meta)?;
+    fn emit_meta_prop_expr(&mut self, node: &MetaPropExpr) {
+        self.emit_ident(&node.meta);
         punct!(self, ".");
-        self.emit_ident(&node.prop)
+        self.emit_ident(&node.prop);
     }
 
-    fn emit_seq_expr(&mut self, node: &SeqExpr) -> Result {
+    fn emit_seq_expr(&mut self, node: &SeqExpr) {
         assert!(node.exprs.len() > 1);
 
         let mut first = true;
@@ -997,20 +959,19 @@ impl<'a> Emitter<'a> {
         for e in &node.exprs {
             if first {
                 first = false;
-                self.emit_expr(e)?;
+                self.emit_expr(e);
             } else {
                 punct!(self, ",");
                 formatting_space!(self);
                 let ctx = self.ctx;
                 self.ctx = Context::FreeExpr;
-                self.emit_expr(e)?;
+                self.emit_expr(e);
                 self.ctx = ctx;
             }
         }
-        Ok(())
     }
 
-    fn emit_assign_expr(&mut self, node: &AssignExpr) -> Result {
+    fn emit_assign_expr(&mut self, node: &AssignExpr) {
         let lhs_is_member = matches!(
             node.left.as_ref(),
             AssignTarget::Simple(SimpleAssignTarget::Member(_))
@@ -1018,7 +979,7 @@ impl<'a> Emitter<'a> {
 
         self.flags
             .set(Flags::in_assign_lhs_member_expr, lhs_is_member);
-        self.emit_assign_target(&node.left)?;
+        self.emit_assign_target(&node.left);
         self.flags.set(Flags::in_assign_lhs_member_expr, false);
         formatting_space!(self);
         operator!(self, node.op.as_str());
@@ -1036,17 +997,16 @@ impl<'a> Emitter<'a> {
 
         if rhs_need_paren(&node.right) {
             punct!(self, "(");
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
         }
 
         self.ctx = ctx;
-        Ok(())
     }
 
-    fn emit_bin_expr(&mut self, node: &BinExpr, wrap_left: bool) -> Result {
+    fn emit_bin_expr(&mut self, node: &BinExpr, wrap_left: bool) {
         fn get_parens(expr: &BinExpr) -> (bool, bool) {
             let mut left_needs_parens = false;
             let mut right_needs_parens = false;
@@ -1109,7 +1069,7 @@ impl<'a> Emitter<'a> {
                     }
                 }
                 _ => {}
-            };
+            }
 
             match expr.left.as_ref() {
                 Expr::Bin(BinExpr { op: op!("??"), .. }) if expr.op != op!("??") => {
@@ -1174,10 +1134,10 @@ impl<'a> Emitter<'a> {
 
         if left_needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.left)?;
+            self.emit_expr(&node.left);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.left)?;
+            self.emit_expr(&node.left);
         }
 
         let is_kwd_op = matches!(node.op, op!("in") | op!("instanceof"));
@@ -1186,7 +1146,7 @@ impl<'a> Emitter<'a> {
             && if self.cfg.minify {
                 if is_kwd_op {
                     matches!(node.left.as_ref(), Expr::Lit(Lit::Regex(_)))
-                        || self.expr_ends_with_alpha_num(&node.left)?
+                        || self.expr_ends_with_alpha_num(&node.left)
                 } else {
                     // space is mandatory to avoid outputting -->
                     match *node.left {
@@ -1215,7 +1175,7 @@ impl<'a> Emitter<'a> {
         let need_post_space = !right_needs_parens
             && if self.cfg.minify {
                 if is_kwd_op {
-                    self.expr_starts_with_alpha_num(&node.right)?
+                    self.expr_starts_with_alpha_num(&node.right)
                 } else {
                     require_space_before_rhs(&node.right, node.op)
                 }
@@ -1234,32 +1194,31 @@ impl<'a> Emitter<'a> {
 
         if right_needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
         }
         self.ctx = ctx;
-        Ok(())
     }
 
-    fn emit_class_expr(&mut self, node: &ClassExpr) -> Result {
+    fn emit_class_expr(&mut self, node: &ClassExpr) {
         keyword!(self, "class");
 
         if let Some(i) = &node.ident {
             space!(self);
-            self.emit_ident(i)?;
+            self.emit_ident(i);
         }
 
-        self.emit_class_trailing(&node.class)
+        self.emit_class_trailing(&node.class);
     }
 
-    fn emit_class_trailing(&mut self, node: &Class) -> Result {
+    fn emit_class_trailing(&mut self, node: &Class) {
         let ctx = std::mem::replace(&mut self.ctx, Context::Default);
 
         if let Some(extends) = &node.extends {
             space!(self);
-            self.emit_extends_clause(extends)?;
+            self.emit_extends_clause(extends);
         }
 
         formatting_space!(self);
@@ -1269,16 +1228,15 @@ impl<'a> Emitter<'a> {
         self.emit_list(
             get_span!(self, node.node_id),
             &node.body,
-            |e: &mut Emitter, n| e.emit_class_member(n),
+            Emitter::emit_class_member,
             ListFormat::ClassMembers,
-        )?;
+        );
         self.flags = old_flags;
         self.ctx = ctx;
         punct!(self, "}");
-        Ok(())
     }
 
-    fn emit_extends_clause(&mut self, node: &ExtendsClause) -> Result {
+    fn emit_extends_clause(&mut self, node: &ExtendsClause) {
         keyword!(self, "extends");
         let needs_parens = matches!(
             node.super_class.as_ref(),
@@ -1293,20 +1251,19 @@ impl<'a> Emitter<'a> {
         if needs_parens {
             formatting_space!(self);
             punct!(self, "(");
-            self.emit_expr(&node.super_class)?;
+            self.emit_expr(&node.super_class);
             punct!(self, ")");
-            Ok(())
         } else {
-            if self.expr_starts_with_alpha_num(&node.super_class)? {
+            if self.expr_starts_with_alpha_num(&node.super_class) {
                 space!(self);
             } else {
                 formatting_space!(self);
             }
-            self.emit_expr(&node.super_class)
+            self.emit_expr(&node.super_class);
         }
     }
 
-    fn emit_class_member(&mut self, node: &ClassMember) -> Result {
+    fn emit_class_member(&mut self, node: &ClassMember) {
         match node {
             ClassMember::Constructor(n) => self.emit_class_constructor(n),
             ClassMember::ClassProp(n) => self.emit_class_prop(n),
@@ -1316,7 +1273,7 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn emit_private_method(&mut self, n: &PrivateMethod) -> Result {
+    fn emit_private_method(&mut self, n: &PrivateMethod) {
         if n.is_static {
             keyword!(self, "static");
             space!(self);
@@ -1340,12 +1297,12 @@ impl<'a> Emitter<'a> {
                 space!(self);
             }
         }
-        self.emit_private_name(&n.key)?;
+        self.emit_private_name(&n.key);
 
-        self.emit_fn_trailing(&n.function)
+        self.emit_fn_trailing(&n.function);
     }
 
-    fn emit_class_method(&mut self, n: &ClassMethod) -> Result {
+    fn emit_class_method(&mut self, n: &ClassMethod) {
         if n.is_static {
             keyword!(self, "static");
 
@@ -1397,18 +1354,18 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        self.emit_prop_name(&n.key)?;
+        self.emit_prop_name(&n.key);
 
         punct!(self, "(");
-        self.emit_function_params(get_span!(self, n.function.node_id), &n.function.params)?;
+        self.emit_function_params(get_span!(self, n.function.node_id), &n.function.params);
         punct!(self, ")");
 
         formatting_space!(self);
-        self.emit_block_stmt(&n.function.body)
+        self.emit_block_stmt(&n.function.body);
     }
 
-    fn emit_private_prop(&mut self, n: &PrivateProp) -> Result {
-        self.emit_private_name(&n.key)?;
+    fn emit_private_prop(&mut self, n: &PrivateProp) {
+        self.emit_private_name(&n.key);
 
         if let Some(value) = &n.value {
             formatting_space!(self);
@@ -1417,24 +1374,23 @@ impl<'a> Emitter<'a> {
 
             if matches!(value.as_ref(), Expr::Seq(_)) {
                 punct!(self, "(");
-                self.emit_expr(value)?;
+                self.emit_expr(value);
                 punct!(self, ")");
             } else {
-                self.emit_expr(value)?;
+                self.emit_expr(value);
             }
         }
 
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_class_prop(&mut self, n: &ClassProp) -> Result {
+    fn emit_class_prop(&mut self, n: &ClassProp) {
         if n.is_static {
             keyword!(self, "static");
             space!(self);
         }
 
-        self.emit_prop_name(&n.key)?;
+        self.emit_prop_name(&n.key);
 
         if let Some(v) = &n.value {
             formatting_space!(self);
@@ -1443,29 +1399,28 @@ impl<'a> Emitter<'a> {
 
             if matches!(v.as_ref(), Expr::Seq(_)) {
                 punct!(self, "(");
-                self.emit_expr(v)?;
+                self.emit_expr(v);
                 punct!(self, ")");
             } else {
-                self.emit_expr(v)?;
+                self.emit_expr(v);
             }
         }
 
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_class_constructor(&mut self, n: &Constructor) -> Result {
+    fn emit_class_constructor(&mut self, n: &Constructor) {
         let span = get_span!(self, n.node_id);
 
         keyword!(self, "constructor");
         punct!(self, "(");
-        self.emit_function_params(span, &n.params)?;
+        self.emit_function_params(span, &n.params);
         punct!(self, ")");
 
-        self.emit_block_stmt(&n.body)
+        self.emit_block_stmt(&n.body);
     }
 
-    fn emit_prop_name(&mut self, node: &PropName) -> Result {
+    fn emit_prop_name(&mut self, node: &PropName) {
         match node {
             PropName::Ident(n) => self.emit_ident(n),
             PropName::Str(n) => self.emit_str_lit(n),
@@ -1475,23 +1430,22 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn emit_computed_prop_name(&mut self, node: &ComputedPropName) -> Result {
+    fn emit_computed_prop_name(&mut self, node: &ComputedPropName) {
         punct!(self, "[");
         let ctx = self.ctx;
         self.ctx = Context::FreeExpr;
         if matches!(node.expr.as_ref(), Expr::Seq(_)) {
             punct!(self, "(");
-            self.emit_expr(&node.expr)?;
+            self.emit_expr(&node.expr);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.expr)?;
+            self.emit_expr(&node.expr);
         }
         self.ctx = ctx;
         punct!(self, "]");
-        Ok(())
     }
 
-    fn emit_cond_expr(&mut self, node: &CondExpr, wrap_test: bool) -> Result {
+    fn emit_cond_expr(&mut self, node: &CondExpr, wrap_test: bool) {
         let test_needs_parens = wrap_test
             || matches!(
                 node.test.as_ref(),
@@ -1500,10 +1454,10 @@ impl<'a> Emitter<'a> {
 
         if test_needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.test)?;
+            self.emit_expr(&node.test);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.test)?;
+            self.emit_expr(&node.test);
         }
 
         formatting_space!(self);
@@ -1515,10 +1469,10 @@ impl<'a> Emitter<'a> {
 
         if matches!(node.cons.as_ref(), Expr::Seq(_)) {
             punct!(self, "(");
-            self.emit_expr(&node.cons)?;
+            self.emit_expr(&node.cons);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.cons)?;
+            self.emit_expr(&node.cons);
         }
 
         formatting_space!(self);
@@ -1527,17 +1481,16 @@ impl<'a> Emitter<'a> {
 
         if matches!(node.alt.as_ref(), Expr::Seq(_)) {
             punct!(self, "(");
-            self.emit_expr(&node.alt)?;
+            self.emit_expr(&node.alt);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.alt)?;
+            self.emit_expr(&node.alt);
         }
 
         self.ctx = ctx;
-        Ok(())
     }
 
-    fn emit_fn_expr(&mut self, node: &FnExpr) -> Result {
+    fn emit_fn_expr(&mut self, node: &FnExpr) {
         if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
@@ -1549,60 +1502,58 @@ impl<'a> Emitter<'a> {
         }
         if let Some(i) = &node.ident {
             space!(self);
-            self.emit_ident(i)?;
+            self.emit_ident(i);
         }
 
-        self.emit_fn_trailing(&node.function)
+        self.emit_fn_trailing(&node.function);
     }
 
     /// prints `(b){}` from `function a(b){}`
-    fn emit_fn_trailing(&mut self, node: &Function) -> Result {
+    fn emit_fn_trailing(&mut self, node: &Function) {
         punct!(self, "(");
-        self.emit_function_params(get_span!(self, node.node_id), &node.params)?;
+        self.emit_function_params(get_span!(self, node.node_id), &node.params);
         punct!(self, ")");
 
         formatting_space!(self);
-        self.emit_block_stmt(&node.body)
+        self.emit_block_stmt(&node.body);
     }
 
-    fn emit_function_params(&mut self, parent_node_span: Span, node: &FunctionParams) -> Result {
+    fn emit_function_params(&mut self, parent_node_span: Span, node: &FunctionParams) {
         self.emit_list_with_extra_item(
             parent_node_span,
             &node.params,
-            |e, n| e.emit_param(n),
+            Emitter::emit_param,
             node.rest_param.as_ref(),
-            |e, n| e.emit_binding_rest_element(n),
+            Emitter::emit_binding_rest_element,
             ListFormat::CommaListElements,
-        )
+        );
     }
 
-    fn emit_this_expr(&mut self, _: &ThisExpr) -> Result {
+    fn emit_this_expr(&mut self, _: &ThisExpr) {
         keyword!(self, "this");
-        Ok(())
     }
 
-    fn emit_tpl_lit(&mut self, node: &Tpl) -> Result {
-        debug_assert!(node.quasis.len() == node.exprs.len() + 1);
+    fn emit_tpl_lit(&mut self, node: &Tpl) {
+        debug_assert_eq!(node.quasis.len(), node.exprs.len() + 1);
 
         punct!(self, "`");
 
         for i in 0..(node.quasis.len() + node.exprs.len()) {
             if i % 2 == 0 {
-                self.emit_quasi(&node.quasis[i / 2])?;
+                self.emit_quasi(&node.quasis[i / 2]);
             } else {
                 punct!(self, "${");
-                self.emit_expr(&node.exprs[i / 2])?;
+                self.emit_expr(&node.exprs[i / 2]);
                 punct!(self, "}");
             }
         }
 
         punct!(self, "`");
-        Ok(())
     }
 
-    fn emit_tagged_tpl_lit(&mut self, node: &TaggedTpl) -> Result {
+    fn emit_tagged_tpl_lit(&mut self, node: &TaggedTpl) {
         if let Expr::New(new) = node.tag.as_ref() {
-            self.emit_new(new, false)?;
+            self.emit_new(new, false);
         } else {
             let needs_parens = matches!(
                 node.tag.as_ref(),
@@ -1617,25 +1568,25 @@ impl<'a> Emitter<'a> {
             );
             if needs_parens {
                 punct!(self, "(");
-                self.emit_expr(&node.tag)?;
+                self.emit_expr(&node.tag);
                 punct!(self, ")");
             } else {
-                self.emit_expr(&node.tag)?;
+                self.emit_expr(&node.tag);
             }
         }
-        self.emit_tpl_lit(&node.tpl)
+        self.emit_tpl_lit(&node.tpl);
     }
 
-    fn emit_quasi(&mut self, node: &TplElement) -> Result {
+    fn emit_quasi(&mut self, node: &TplElement) {
         let value = match &node.value {
             TplString::Cooked(cooked) => &escape_tpl_string(cooked),
             TplString::Raw(raw) => &unescape_tpl_lit(raw),
         };
 
-        self.wr.write_str_lit(get_span!(self, node.node_id), value)
+        self.wr.write_str_lit(get_span!(self, node.node_id), value);
     }
 
-    fn emit_unary_expr(&mut self, node: &UnaryExpr) -> Result {
+    fn emit_unary_expr(&mut self, node: &UnaryExpr) {
         let need_formatting_space = match node.op {
             op!("typeof") | op!("void") | op!("delete") => {
                 keyword!(self, node.op.as_str());
@@ -1693,51 +1644,48 @@ impl<'a> Emitter<'a> {
             if need_formatting_space {
                 formatting_space!(self);
             }
-        } else if self.should_emit_whitespace_before_operand(node)? {
+        } else if self.should_emit_whitespace_before_operand(node) {
             space!(self);
         }
 
         if needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.arg)?;
+            self.emit_expr(&node.arg);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.arg)?;
+            self.emit_expr(&node.arg);
         }
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_update_expr(&mut self, node: &UpdateExpr) -> Result {
+    fn emit_update_expr(&mut self, node: &UpdateExpr) {
         if node.prefix {
             operator!(self, node.op.as_str());
             //TODO: Check if we should use should_emit_whitespace_before_operand
-            self.emit_simple_assign_target(&node.arg)?;
+            self.emit_simple_assign_target(&node.arg);
         } else {
-            self.emit_simple_assign_target(&node.arg)?;
+            self.emit_simple_assign_target(&node.arg);
             operator!(self, node.op.as_str());
         }
-        Ok(())
     }
 
-    fn emit_yield_expr(&mut self, node: &YieldExpr) -> Result {
+    fn emit_yield_expr(&mut self, node: &YieldExpr) {
         keyword!(self, "yield");
         if node.delegate {
             operator!(self, "*");
         }
 
         if let Some(arg) = &node.arg {
-            if !node.delegate && self.expr_starts_with_alpha_num(arg)? {
+            if !node.delegate && self.expr_starts_with_alpha_num(arg) {
                 space!(self);
             } else {
                 formatting_space!(self);
             }
             let old = self.ctx;
             self.ctx = Context::ForcedExpr;
-            self.emit_expr(arg)?;
+            self.emit_expr(arg);
             self.ctx = old;
         }
-        Ok(())
     }
 
     fn emit_expr_or_spreads(
@@ -1745,30 +1693,29 @@ impl<'a> Emitter<'a> {
         parent_node: Span,
         nodes: &[ExprOrSpread],
         format: ListFormat,
-    ) -> Result {
-        self.emit_list(parent_node, nodes, |e, n| e.emit_expr_or_spread(n), format)
+    ) {
+        self.emit_list(parent_node, nodes, Emitter::emit_expr_or_spread, format);
     }
 
-    fn emit_expr_or_spread(&mut self, node: &ExprOrSpread) -> Result {
+    fn emit_expr_or_spread(&mut self, node: &ExprOrSpread) {
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
         match node {
-            ExprOrSpread::Spread(n) => self.emit_spread_element(n)?,
+            ExprOrSpread::Spread(n) => self.emit_spread_element(n),
             ExprOrSpread::Expr(n) => {
                 if matches!(n.as_ref(), Expr::Yield(_)) {
                     punct!(self, "(");
-                    self.emit_expr(n)?;
+                    self.emit_expr(n);
                     punct!(self, ")");
                 } else {
-                    self.emit_expr(n)?;
+                    self.emit_expr(n);
                 }
             }
         }
         self.flags = old_flags;
-        Ok(())
     }
 
-    fn emit_await_expr(&mut self, node: &AwaitExpr) -> Result {
+    fn emit_await_expr(&mut self, node: &AwaitExpr) {
         keyword!(self, "await");
 
         let needs_parens = matches!(
@@ -1776,7 +1723,7 @@ impl<'a> Emitter<'a> {
             Expr::Cond(..) | Expr::Assign(..) | Expr::Bin(..) | Expr::Yield(..)
         );
 
-        if needs_parens || !self.expr_starts_with_alpha_num(&node.arg)? {
+        if needs_parens || !self.expr_starts_with_alpha_num(&node.arg) {
             formatting_space!(self);
         } else {
             space!(self);
@@ -1786,16 +1733,15 @@ impl<'a> Emitter<'a> {
         self.ctx = Context::ForcedExpr;
         if needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.arg)?;
+            self.emit_expr(&node.arg);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.arg)?;
+            self.emit_expr(&node.arg);
         }
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_array_lit(&mut self, node: &ArrayLit) -> Result {
+    fn emit_array_lit(&mut self, node: &ArrayLit) {
         let span = get_span!(self, node.node_id);
 
         punct!(self, "[");
@@ -1813,45 +1759,41 @@ impl<'a> Emitter<'a> {
             &node.elems,
             |e, n| {
                 if let Some(n) = n {
-                    e.emit_expr_or_spread(n)
-                } else {
-                    Ok(())
+                    e.emit_expr_or_spread(n);
                 }
             },
             format,
-        )?;
+        );
 
         self.flags = old_flags;
         self.ctx = ctx;
 
         punct!(self, "]");
-        Ok(())
     }
 
-    fn emit_object_lit(&mut self, node: &ObjectLit) -> Result {
+    fn emit_object_lit(&mut self, node: &ObjectLit) {
         let span = get_span!(self, node.node_id);
 
         punct!(self, "{");
         if !self.cfg.minify {
-            self.wr.write_line()?;
+            self.wr.write_line();
         }
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
         self.emit_list(
             span,
             &node.props,
-            |e, n| e.emit_prop(n),
+            Emitter::emit_prop,
             ListFormat::ObjectLiteralExpressionProperties | ListFormat::CanSkipTrailingComma,
-        )?;
+        );
         self.flags = old_flags;
         if !self.cfg.minify {
-            self.wr.write_line()?;
+            self.wr.write_line();
         }
         punct!(self, "}");
-        Ok(())
     }
 
-    fn emit_prop(&mut self, node: &Prop) -> Result {
+    fn emit_prop(&mut self, node: &Prop) {
         match node {
             Prop::KeyValue(n) => self.emit_kv_prop(n),
             Prop::Assign(_) => unreachable!(),
@@ -1862,7 +1804,7 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn emit_kv_prop(&mut self, node: &KeyValueProp) -> Result {
+    fn emit_kv_prop(&mut self, node: &KeyValueProp) {
         // Short hand properties e.g. `{foo:foo}` => `{foo}`
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
@@ -1876,20 +1818,19 @@ impl<'a> Emitter<'a> {
             }
         }
 
-        self.emit_prop_name(&node.key)?;
+        self.emit_prop_name(&node.key);
         punct!(self, ":");
         formatting_space!(self);
         if matches!(node.value.as_ref(), Expr::Seq(_)) {
             punct!(self, "(");
-            self.emit_expr(&node.value)?;
+            self.emit_expr(&node.value);
             punct!(self, ")");
-            Ok(())
         } else {
-            self.emit_expr(&node.value)
+            self.emit_expr(&node.value);
         }
     }
 
-    fn emit_getter_prop(&mut self, node: &GetterProp) -> Result {
+    fn emit_getter_prop(&mut self, node: &GetterProp) {
         keyword!(self, "get");
 
         let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
@@ -1899,14 +1840,14 @@ impl<'a> Emitter<'a> {
             formatting_space!(self);
         }
 
-        self.emit_prop_name(&node.key)?;
+        self.emit_prop_name(&node.key);
         punct!(self, "(");
         punct!(self, ")");
         formatting_space!(self);
-        self.emit_block_stmt(&node.body)
+        self.emit_block_stmt(&node.body);
     }
 
-    fn emit_setter_prop(&mut self, node: &SetterProp) -> Result {
+    fn emit_setter_prop(&mut self, node: &SetterProp) {
         keyword!(self, "set");
 
         let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
@@ -1917,16 +1858,16 @@ impl<'a> Emitter<'a> {
             formatting_space!(self);
         }
 
-        self.emit_prop_name(&node.key)?;
+        self.emit_prop_name(&node.key);
 
         punct!(self, "(");
-        self.emit_param(&node.param)?;
+        self.emit_param(&node.param);
         punct!(self, ")");
         formatting_space!(self);
-        self.emit_block_stmt(&node.body)
+        self.emit_block_stmt(&node.body);
     }
 
-    fn emit_method_prop(&mut self, node: &MethodProp) -> Result {
+    fn emit_method_prop(&mut self, node: &MethodProp) {
         if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
@@ -1936,67 +1877,66 @@ impl<'a> Emitter<'a> {
             punct!(self, "*");
         }
 
-        self.emit_prop_name(&node.key)?;
-        self.emit_fn_trailing(&node.function)
+        self.emit_prop_name(&node.key);
+        self.emit_fn_trailing(&node.function);
     }
 
-    fn emit_spread_assignment(&mut self, node: &SpreadAssignment) -> Result {
+    fn emit_spread_assignment(&mut self, node: &SpreadAssignment) {
         punct!(self, "...");
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        self.emit_expr(&node.expr)?;
+        self.emit_expr(&node.expr);
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_private_name(&mut self, n: &PrivateName) -> Result {
+    fn emit_private_name(&mut self, n: &PrivateName) {
         punct!(self, "#");
-        self.emit_ident(&n.id)
+        self.emit_ident(&n.id);
     }
 
-    fn emit_binding_ident(&mut self, ident: &BindingIdent) -> Result {
-        self.emit_ident(&ident.id)
+    fn emit_binding_ident(&mut self, ident: &BindingIdent) {
+        self.emit_ident(&ident.id);
     }
 
-    fn emit_ident(&mut self, ident: &Ident) -> Result {
+    fn emit_ident(&mut self, ident: &Ident) {
         let span = get_span!(self, ident.node_id);
         let name = self.program_data.get_name_text(ident.name);
-        self.wr.write_symbol(span, name)
+        self.wr.write_symbol(span, name);
     }
 
     fn emit_list<N>(
         &mut self,
         parent_node: Span,
         children: &[N],
-        emit_child: impl Fn(&mut Self, &N) -> Result,
+        emit_child: impl Fn(&mut Self, &N),
         format: ListFormat,
-    ) -> Result {
+    ) {
         self.emit_list_with_extra_item(
             parent_node,
             children,
             emit_child,
             None::<&()>,
-            |_, _| Ok(()),
+            |_, _| (),
             format,
-        )
+        );
     }
 
     fn emit_list_with_extra_item<N, E>(
         &mut self,
         parent_node: Span,
         children: &[N],
-        emit_child: impl Fn(&mut Self, &N) -> Result,
+        emit_child: impl Fn(&mut Self, &N),
         extra: Option<&E>,
-        emit_extra: impl Fn(&mut Self, &E) -> Result,
+        emit_extra: impl Fn(&mut Self, &E),
         format: ListFormat,
-    ) -> Result {
+    ) {
         let is_empty = children.is_empty() && extra.is_none();
         if is_empty && format.contains(ListFormat::OptionalIfEmpty) {
-            return Ok(());
+            return;
         }
 
         if format.contains(ListFormat::BracketsMask) {
-            self.wr.write_punct(None, format.opening_bracket())?;
+            self.wr.write_punct(None, format.opening_bracket());
         }
 
         if is_empty {
@@ -2004,13 +1944,13 @@ impl<'a> Emitter<'a> {
 
             if format.contains(ListFormat::MultiLine) {
                 if !self.cfg.minify {
-                    self.wr.write_line()?;
+                    self.wr.write_line();
                 }
             } else if format.contains(ListFormat::SpaceBetweenBraces)
                 && !(format.contains(ListFormat::NoSpaceIfEmpty))
                 && !self.cfg.minify
             {
-                self.wr.write_space()?;
+                self.wr.write_space();
             }
         } else {
             // Write the opening line terminator or leading whitespace.
@@ -2019,15 +1959,15 @@ impl<'a> Emitter<'a> {
                 .should_write_leading_line_terminator(parent_node, children, format)
             {
                 if !self.cfg.minify {
-                    self.wr.write_line()?;
+                    self.wr.write_line();
                 }
             } else if format.contains(ListFormat::SpaceBetweenBraces) && !self.cfg.minify {
-                self.wr.write_space()?;
+                self.wr.write_space();
             }
 
             // Increase the indent, if requested.
             if format.contains(ListFormat::Indented) && !self.cfg.minify {
-                self.wr.increase_indent()?;
+                self.wr.increase_indent();
             }
 
             // Emit each child.
@@ -2036,7 +1976,7 @@ impl<'a> Emitter<'a> {
             for child in children {
                 // Write the delimiter if this is not the first node.
                 if !first {
-                    self.write_delim(format)?;
+                    self.write_delim(format);
 
                     // Write either a line terminator or whitespace to separate the elements.
 
@@ -2047,22 +1987,22 @@ impl<'a> Emitter<'a> {
                             == ListFormat::SingleLine
                             && !self.cfg.minify
                         {
-                            self.wr.increase_indent()?;
+                            self.wr.increase_indent();
                             should_decrease_indent_after_emit = true;
                         }
 
                         if !self.cfg.minify {
-                            self.wr.write_line()?;
+                            self.wr.write_line();
                         }
                     } else if format.contains(ListFormat::SpaceBetweenSiblings) {
                         formatting_space!(self);
                     }
                 }
 
-                emit_child(self, child)?;
+                emit_child(self, child);
 
                 if should_decrease_indent_after_emit {
-                    self.wr.decrease_indent()?;
+                    self.wr.decrease_indent();
                     should_decrease_indent_after_emit = false;
                 }
 
@@ -2072,7 +2012,7 @@ impl<'a> Emitter<'a> {
             if let Some(extra) = extra {
                 // Write the delimiter if this is not the first node.
                 if !first {
-                    self.write_delim(format)?;
+                    self.write_delim(format);
 
                     // Write either a line terminator or whitespace to separate the elements.
 
@@ -2083,22 +2023,22 @@ impl<'a> Emitter<'a> {
                             == ListFormat::SingleLine
                             && !self.cfg.minify
                         {
-                            self.wr.increase_indent()?;
+                            self.wr.increase_indent();
                             should_decrease_indent_after_emit = true;
                         }
 
                         if !self.cfg.minify {
-                            self.wr.write_line()?;
+                            self.wr.write_line();
                         }
                     } else if format.contains(ListFormat::SpaceBetweenSiblings) {
                         formatting_space!(self);
                     }
                 }
 
-                emit_extra(self, extra)?;
+                emit_extra(self, extra);
 
                 if should_decrease_indent_after_emit {
-                    self.wr.decrease_indent()?;
+                    self.wr.decrease_indent();
                 }
             }
 
@@ -2132,7 +2072,7 @@ impl<'a> Emitter<'a> {
 
             // Decrease the indent, if requested.
             if format.contains(ListFormat::Indented) && !self.cfg.minify {
-                self.wr.decrease_indent()?;
+                self.wr.decrease_indent();
             }
 
             // Write the closing line terminator or closing whitespace.
@@ -2141,72 +2081,67 @@ impl<'a> Emitter<'a> {
                 .should_write_closing_line_terminator(parent_node, children, format)
             {
                 if !self.cfg.minify {
-                    self.wr.write_line()?;
+                    self.wr.write_line();
                 }
             } else if format.contains(ListFormat::SpaceBetweenBraces) && !self.cfg.minify {
-                self.wr.write_space()?;
+                self.wr.write_space();
             }
         }
 
         if format.contains(ListFormat::BracketsMask) {
-            self.wr.write_punct(None, format.closing_bracket())?;
+            self.wr.write_punct(None, format.closing_bracket());
         }
-
-        Ok(())
     }
 }
 
 /// Patterns
 impl Emitter<'_> {
-    fn emit_param(&mut self, node: &Param) -> Result {
+    fn emit_param(&mut self, node: &Param) {
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
 
-        self.emit_binding_element(&node.pat)?;
+        self.emit_binding_element(&node.pat);
         self.flags = old_flags;
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_spread_element(&mut self, node: &SpreadElement) -> Result {
+    fn emit_spread_element(&mut self, node: &SpreadElement) {
         punct!(self, "...");
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        self.emit_expr(&node.expr)?;
+        self.emit_expr(&node.expr);
         self.ctx = old;
-        Ok(())
     }
 
-    fn emit_binding_element(&mut self, node: &BindingElement) -> Result {
+    fn emit_binding_element(&mut self, node: &BindingElement) {
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
 
-        self.emit_binding_pat_or_ident(&node.target)?;
+        self.emit_binding_pat_or_ident(&node.target);
 
         if let Some(init) = &node.init {
             formatting_space!(self);
             punct!(self, "=");
             formatting_space!(self);
 
-            self.emit_expr(init)?;
+            self.emit_expr(init);
         }
 
         self.flags = old_flags;
-        Ok(())
     }
 
-    pub fn emit_binding_pat(&mut self, node: &BindingPat) -> Result {
+    pub fn emit_binding_pat(&mut self, node: &BindingPat) {
         match node {
             BindingPat::Array(array_binding_pat) => self.emit_array_binding_pat(array_binding_pat),
             BindingPat::Object(object_binding_pat) => {
-                self.emit_object_binding_pat(object_binding_pat)
+                self.emit_object_binding_pat(object_binding_pat);
             }
         }
     }
 
-    fn emit_array_binding_pat(&mut self, node: &ArrayBindingPat) -> Result {
+    fn emit_array_binding_pat(&mut self, node: &ArrayBindingPat) {
         let span = get_span!(self, node.node_id);
 
         punct!(self, "[");
@@ -2215,25 +2150,22 @@ impl Emitter<'_> {
             &node.elems,
             |e, n| {
                 if let Some(n) = n {
-                    e.emit_binding_element(n)
-                } else {
-                    Ok(())
+                    e.emit_binding_element(n);
                 }
             },
             node.rest.as_ref(),
-            |e, n| e.emit_binding_rest_element(n),
+            Emitter::emit_binding_rest_element,
             ListFormat::ArrayBindingPatternElements,
-        )?;
+        );
         punct!(self, "]");
-        Ok(())
     }
 
-    fn emit_binding_rest_element(&mut self, node: &BindingRestElement) -> Result {
+    fn emit_binding_rest_element(&mut self, node: &BindingRestElement) {
         punct!(self, "...");
-        self.emit_binding_pat_or_ident(&node.arg)
+        self.emit_binding_pat_or_ident(&node.arg);
     }
 
-    fn emit_binding_pat_or_ident(&mut self, node: &BindingPatOrIdent) -> Result {
+    fn emit_binding_pat_or_ident(&mut self, node: &BindingPatOrIdent) {
         match node {
             BindingPatOrIdent::Array(p) => self.emit_array_binding_pat(p),
             BindingPatOrIdent::Object(p) => self.emit_object_binding_pat(p),
@@ -2241,7 +2173,7 @@ impl Emitter<'_> {
         }
     }
 
-    fn emit_object_binding_pat(&mut self, node: &ObjectBindingPat) -> Result {
+    fn emit_object_binding_pat(&mut self, node: &ObjectBindingPat) {
         let span = get_span!(self, node.node_id);
 
         let format = if node.rest.is_some() {
@@ -2254,16 +2186,15 @@ impl Emitter<'_> {
         self.emit_list_with_extra_item(
             span,
             &node.props,
-            |e, n| e.emit_binding_property(n),
+            Emitter::emit_binding_property,
             node.rest.as_ref(),
-            |e, n| e.emit_binding_rest_property(n),
+            Emitter::emit_binding_rest_property,
             format | ListFormat::CanSkipTrailingComma,
-        )?;
+        );
         punct!(self, "}");
-        Ok(())
     }
 
-    fn emit_binding_property(&mut self, node: &BindingProperty) -> Result {
+    fn emit_binding_property(&mut self, node: &BindingProperty) {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.prop {
                 // Short hand properties e.g. `{foo:foo}` => `{foo}`
@@ -2292,13 +2223,13 @@ impl Emitter<'_> {
                         == self.program_data.get_name_text(key.name)
                     {
                         // TODO: we can just emit the target here.
-                        self.emit_ident(key)?;
+                        self.emit_ident(key);
                         punct!(self, "=");
                         let old = self.ctx;
                         self.ctx = Context::ForcedExpr;
-                        self.emit_expr(init)?;
+                        self.emit_expr(init);
                         self.ctx = old;
-                        return Ok(());
+                        return;
                     }
                 }
             }
@@ -2306,40 +2237,38 @@ impl Emitter<'_> {
 
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        self.emit_prop_name(&node.prop)?;
+        self.emit_prop_name(&node.prop);
         self.ctx = old;
 
         punct!(self, ":");
         formatting_space!(self);
-        self.emit_binding_element(&node.target)?;
+        self.emit_binding_element(&node.target);
         formatting_space!(self);
-        Ok(())
     }
 
-    fn emit_binding_rest_property(&mut self, node: &BindingRestProperty) -> Result {
+    fn emit_binding_rest_property(&mut self, node: &BindingRestProperty) {
         punct!(self, "...");
-        self.emit_binding_ident(&node.arg)
+        self.emit_binding_ident(&node.arg);
     }
 
-    fn emit_assignment_element(&mut self, node: &AssignmentElement) -> Result {
+    fn emit_assignment_element(&mut self, node: &AssignmentElement) {
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, false);
 
-        self.emit_assign_target(&node.target)?;
+        self.emit_assign_target(&node.target);
 
         if let Some(init) = &node.init {
             formatting_space!(self);
             punct!(self, "=");
             formatting_space!(self);
 
-            self.emit_expr(init)?;
+            self.emit_expr(init);
         }
 
         self.flags = old_flags;
-        Ok(())
     }
 
-    fn emit_array_assignment_pat(&mut self, node: &ArrayAssignmentPat) -> Result {
+    fn emit_array_assignment_pat(&mut self, node: &ArrayAssignmentPat) {
         let span = get_span!(self, node.node_id);
 
         punct!(self, "[");
@@ -2348,25 +2277,22 @@ impl Emitter<'_> {
             &node.elems,
             |e, n| {
                 if let Some(n) = n {
-                    e.emit_assignment_element(n)
-                } else {
-                    Ok(())
+                    e.emit_assignment_element(n);
                 }
             },
             node.rest.as_ref(),
-            |e, n| e.emit_assignment_rest(n),
+            Emitter::emit_assignment_rest,
             ListFormat::ArrayBindingPatternElements,
-        )?;
+        );
         punct!(self, "]");
-        Ok(())
     }
 
-    fn emit_assignment_rest(&mut self, node: &AssignmentRest) -> Result {
+    fn emit_assignment_rest(&mut self, node: &AssignmentRest) {
         punct!(self, "...");
-        self.emit_assign_target(&node.arg)
+        self.emit_assign_target(&node.arg);
     }
 
-    fn emit_object_assignment_pat(&mut self, node: &ObjectAssignmentPat) -> Result {
+    fn emit_object_assignment_pat(&mut self, node: &ObjectAssignmentPat) {
         let span = get_span!(self, node.node_id);
 
         let format = if node.rest.is_some() {
@@ -2379,16 +2305,15 @@ impl Emitter<'_> {
         self.emit_list_with_extra_item(
             span,
             &node.props,
-            |e, n| e.emit_assignment_property(n),
+            Emitter::emit_assignment_property,
             node.rest.as_ref(),
-            |e, n| e.emit_assignment_rest(n),
+            Emitter::emit_assignment_rest,
             format | ListFormat::CanSkipTrailingComma,
-        )?;
+        );
         punct!(self, "}");
-        Ok(())
     }
 
-    fn emit_assignment_property(&mut self, node: &AssignmentProperty) -> Result {
+    fn emit_assignment_property(&mut self, node: &AssignmentProperty) {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.prop {
                 // Short hand properties e.g. `{foo:foo}` => `{foo}`
@@ -2420,13 +2345,13 @@ impl Emitter<'_> {
                             == self.program_data.get_name_text(key.name)
                         {
                             // TODO: we can just emit the target here.
-                            self.emit_ident(key)?;
+                            self.emit_ident(key);
                             punct!(self, "=");
                             let old = self.ctx;
                             self.ctx = Context::ForcedExpr;
-                            self.emit_expr(init)?;
+                            self.emit_expr(init);
                             self.ctx = old;
-                            return Ok(());
+                            return;
                         }
                     }
                 }
@@ -2435,42 +2360,41 @@ impl Emitter<'_> {
 
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        self.emit_prop_name(&node.prop)?;
+        self.emit_prop_name(&node.prop);
         self.ctx = old;
 
         punct!(self, ":");
         formatting_space!(self);
-        self.emit_assignment_element(&node.target)?;
+        self.emit_assignment_element(&node.target);
         formatting_space!(self);
-        Ok(())
     }
 
-    fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrAssignTarget) -> Result {
+    fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrAssignTarget) {
         match node {
             VarDeclOrAssignTarget::VarDecl(var_decl) => self.emit_var_decl(var_decl),
             VarDeclOrAssignTarget::AssignTarget(assign_target) => {
-                self.emit_assign_target(assign_target)
+                self.emit_assign_target(assign_target);
             }
         }
     }
 
-    fn emit_assign_target(&mut self, node: &AssignTarget) -> Result {
+    fn emit_assign_target(&mut self, node: &AssignTarget) {
         match node {
             AssignTarget::Simple(simple_assign_target) => {
-                self.emit_simple_assign_target(simple_assign_target)
+                self.emit_simple_assign_target(simple_assign_target);
             }
             AssignTarget::AssignmentPat(assignment_pat) => match assignment_pat {
                 AssignmentPat::Array(array_assignment_pat) => {
-                    self.emit_array_assignment_pat(array_assignment_pat)
+                    self.emit_array_assignment_pat(array_assignment_pat);
                 }
                 AssignmentPat::Object(object_assignment_pat) => {
-                    self.emit_object_assignment_pat(object_assignment_pat)
+                    self.emit_object_assignment_pat(object_assignment_pat);
                 }
             },
         }
     }
 
-    fn emit_simple_assign_target(&mut self, node: &SimpleAssignTarget) -> Result {
+    fn emit_simple_assign_target(&mut self, node: &SimpleAssignTarget) {
         match node {
             SimpleAssignTarget::Ident(binding_ident) => self.emit_binding_ident(binding_ident),
             SimpleAssignTarget::Member(member_expr) => self.emit_member_expr(member_expr),
@@ -2480,7 +2404,7 @@ impl Emitter<'_> {
 
 /// Statements
 impl Emitter<'_> {
-    fn emit_stmt(&mut self, node: &Stmt, ignore_empty: bool) -> Result {
+    fn emit_stmt(&mut self, node: &Stmt, ignore_empty: bool) {
         let old = self.ctx;
         // only ExprStmt would have unparented expr,
         // which would be handled in its own visit function
@@ -2507,13 +2431,12 @@ impl Emitter<'_> {
             Stmt::ForIn(e) => self.emit_for_in_stmt(e),
             Stmt::ForOf(e) => self.emit_for_of_stmt(e),
             Stmt::Decl(e) => self.emit_decl(e),
-        }?;
+        }
         self.ctx = old;
 
         if !self.cfg.minify {
-            self.wr.write_line()?;
+            self.wr.write_line();
         }
-        Ok(())
     }
 
     /// Emits a statement in a single-statement context.
@@ -2522,14 +2445,14 @@ impl Emitter<'_> {
         block: &BlockStmt,
         needs_space_if_alpha_num: bool,
         if_cons: bool,
-    ) -> Result {
+    ) {
         if block.stmts.is_empty() {
             semi!(self);
-            return Ok(());
+            return;
         } else if let Some(replacement) =
             get_single_stmt_ctx_block_replacement(block, self.cfg.minify, if_cons)
         {
-            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(replacement)? {
+            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(replacement) {
                 space!(self);
             } else {
                 formatting_space!(self);
@@ -2542,31 +2465,25 @@ impl Emitter<'_> {
 
         let old = self.ctx;
         self.ctx = Context::FreeExpr;
-        self.emit_block_stmt(block)?;
+        self.emit_block_stmt(block);
         self.ctx = old;
-        Ok(())
     }
 
     /// Emits a statement in a single-statement context
-    fn emit_single_stmt(
-        &mut self,
-        stmt: &Stmt,
-        needs_space_if_alpha_num: bool,
-        if_cons: bool,
-    ) -> Result {
+    fn emit_single_stmt(&mut self, stmt: &Stmt, needs_space_if_alpha_num: bool, if_cons: bool) {
         if let Stmt::Block(block) = stmt {
-            self.emit_single_stmt_ctx_block(block, needs_space_if_alpha_num, if_cons)
+            self.emit_single_stmt_ctx_block(block, needs_space_if_alpha_num, if_cons);
         } else {
-            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(stmt)? {
+            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(stmt) {
                 space!(self);
             } else {
                 formatting_space!(self);
             }
-            self.emit_stmt(stmt, false)
+            self.emit_stmt(stmt, false);
         }
     }
 
-    fn emit_expr_stmt(&mut self, e: &ExprStmt) -> Result {
+    fn emit_expr_stmt(&mut self, e: &ExprStmt) {
         let old = self.ctx;
         self.ctx = Context::Default;
 
@@ -2588,20 +2505,19 @@ impl Emitter<'_> {
 
         if needs_parens {
             punct!(self, "(");
-            self.emit_expr(&e.expr)?;
+            self.emit_expr(&e.expr);
             punct!(self, ")");
         } else {
-            self.emit_expr(&e.expr)?;
+            self.emit_expr(&e.expr);
         }
 
         self.flags.set(Flags::in_expr_stmt_seq, in_expr_stmt_seq);
 
         self.ctx = old;
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_block_stmt(&mut self, node: &BlockStmt) -> Result {
+    fn emit_block_stmt(&mut self, node: &BlockStmt) {
         let span = get_span!(self, node.node_id);
 
         {
@@ -2610,7 +2526,7 @@ impl Emitter<'_> {
             } else {
                 Span::new(span.lo, span.lo + BytePos(1))
             };
-            self.wr.write_punct(Some(span), Punct::LBrace)?;
+            self.wr.write_punct(Some(span), Punct::LBrace);
         }
 
         let old_flags = self.flags;
@@ -2621,7 +2537,7 @@ impl Emitter<'_> {
             &node.stmts,
             |e, n| e.emit_stmt(n, true),
             ListFormat::MultiLineBlockStatements,
-        )?;
+        );
 
         self.flags = old_flags;
 
@@ -2631,79 +2547,73 @@ impl Emitter<'_> {
             } else {
                 Span::new(span.hi - BytePos(1), span.hi)
             };
-            self.wr.write_punct(Some(span), Punct::RBrace)?;
+            self.wr.write_punct(Some(span), Punct::RBrace);
         }
-        Ok(())
     }
 
-    fn emit_empty_stmt(&mut self, _: &EmptyStmt, ignore_empty: bool) -> Result {
+    fn emit_empty_stmt(&mut self, _: &EmptyStmt, ignore_empty: bool) {
         if !ignore_empty {
             semi!(self);
         }
-        Ok(())
     }
 
-    fn emit_debugger_stmt(&mut self, _: &DebuggerStmt) -> Result {
+    fn emit_debugger_stmt(&mut self, _: &DebuggerStmt) {
         keyword!(self, "debugger");
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_with_stmt(&mut self, node: &WithStmt) -> Result {
+    fn emit_with_stmt(&mut self, node: &WithStmt) {
         keyword!(self, "with");
         formatting_space!(self);
         punct!(self, "(");
-        self.emit_expr(&node.obj)?;
+        self.emit_expr(&node.obj);
         punct!(self, ")");
 
-        self.emit_single_stmt_ctx_block(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false);
     }
 
-    fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
+    fn emit_return_stmt(&mut self, node: &ReturnStmt) {
         keyword!(self, "return");
         if let Some(arg) = &node.arg {
-            let need_paren = self.expr_starts_with_alpha_num(arg)?;
+            let need_paren = self.expr_starts_with_alpha_num(arg);
             if need_paren {
                 space!(self);
             } else {
                 formatting_space!(self);
             }
 
-            self.emit_expr(arg)?;
+            self.emit_expr(arg);
         }
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_labeled_stmt(&mut self, node: &LabeledStmt) -> Result {
-        self.emit_ident(&node.label)?;
+    fn emit_labeled_stmt(&mut self, node: &LabeledStmt) {
+        self.emit_ident(&node.label);
 
         punct!(self, ":");
 
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt(&node.body, false, false);
     }
 
-    fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {
+    fn emit_break_stmt(&mut self, node: &BreakStmt) {
         keyword!(self, "break");
         if let Some(label) = &node.label {
             space!(self);
-            self.emit_ident(label)?;
+            self.emit_ident(label);
         }
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_continue_stmt(&mut self, node: &ContinueStmt) -> Result {
+    fn emit_continue_stmt(&mut self, node: &ContinueStmt) {
         keyword!(self, "continue");
         if let Some(label) = &node.label {
             space!(self);
-            self.emit_ident(label)?;
+            self.emit_ident(label);
         }
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_if_stmt(&mut self, node: &IfStmt) -> Result {
+    fn emit_if_stmt(&mut self, node: &IfStmt) {
         let span = get_span!(self, node.node_id);
 
         {
@@ -2713,26 +2623,25 @@ impl Emitter<'_> {
 
         formatting_space!(self);
         punct!(self, "(");
-        self.emit_expr(&node.test)?;
+        self.emit_expr(&node.test);
         punct!(self, ")");
 
-        self.emit_single_stmt_ctx_block(&node.cons, false, true)?;
+        self.emit_single_stmt_ctx_block(&node.cons, false, true);
 
         if let Some(alt) = &node.alt {
             formatting_space!(self);
             keyword!(self, "else");
-            self.emit_single_stmt_ctx_block(alt, true, false)?;
+            self.emit_single_stmt_ctx_block(alt, true, false);
         }
-        Ok(())
     }
 
-    fn emit_switch_stmt(&mut self, node: &SwitchStmt) -> Result {
+    fn emit_switch_stmt(&mut self, node: &SwitchStmt) {
         let span = get_span!(self, node.node_id);
 
         keyword!(self, "switch");
 
         punct!(self, "(");
-        self.emit_expr(&node.discriminant)?;
+        self.emit_expr(&node.discriminant);
         punct!(self, ")");
 
         punct!(self, "{");
@@ -2741,39 +2650,38 @@ impl Emitter<'_> {
             &node.cases,
             Emitter::emit_switch_case,
             ListFormat::CaseBlockClauses,
-        )?;
+        );
         punct!(self, "}");
-        Ok(())
     }
 
-    fn emit_catch_clause(&mut self, node: &CatchClause) -> Result {
+    fn emit_catch_clause(&mut self, node: &CatchClause) {
         keyword!(self, "catch");
         formatting_space!(self);
 
         if let Some(param) = &node.param {
             punct!(self, "(");
-            self.emit_binding_pat_or_ident(param)?;
+            self.emit_binding_pat_or_ident(param);
             punct!(self, ")");
         }
 
         formatting_space!(self);
 
-        self.emit_block_stmt(&node.body)
+        self.emit_block_stmt(&node.body);
     }
 
-    fn emit_switch_case(&mut self, node: &SwitchCase) -> Result {
+    fn emit_switch_case(&mut self, node: &SwitchCase) {
         let span = get_span!(self, node.node_id);
 
         if let Some(test) = &node.test {
             keyword!(self, "case");
 
-            if self.expr_starts_with_alpha_num(test)? {
+            if self.expr_starts_with_alpha_num(test) {
                 space!(self);
             } else {
                 formatting_space!(self);
             }
 
-            self.emit_expr(test)?;
+            self.emit_expr(test);
         } else {
             keyword!(self, "default");
         }
@@ -2788,71 +2696,68 @@ impl Emitter<'_> {
         } else {
             punct!(self, ":");
         }
-        self.emit_list(span, &node.cons, |e, n| e.emit_stmt(n, true), format)
+        self.emit_list(span, &node.cons, |e, n| e.emit_stmt(n, true), format);
     }
 
-    fn emit_throw_stmt(&mut self, node: &ThrowStmt) -> Result {
+    fn emit_throw_stmt(&mut self, node: &ThrowStmt) {
         let span = get_span!(self, node.node_id);
 
         let throw_span = self.cm.span_until_char(span, ' ');
 
         keyword!(self, throw_span, "throw");
 
-        if self.expr_starts_with_alpha_num(&node.arg)? {
+        if self.expr_starts_with_alpha_num(&node.arg) {
             space!(self);
         } else {
             formatting_space!(self);
         }
-        self.emit_expr(&node.arg)?;
+        self.emit_expr(&node.arg);
 
         formatting_semi!(self);
-        Ok(())
     }
 
-    fn emit_try_stmt(&mut self, node: &TryStmt) -> Result {
+    fn emit_try_stmt(&mut self, node: &TryStmt) {
         keyword!(self, "try");
         formatting_space!(self);
-        self.emit_block_stmt(&node.block)?;
+        self.emit_block_stmt(&node.block);
 
         if let Some(catch) = node.get_catch() {
             formatting_space!(self);
-            self.emit_catch_clause(catch)?;
+            self.emit_catch_clause(catch);
         }
 
         if let Some(finally) = node.get_finally() {
             formatting_space!(self);
             keyword!(self, "finally");
             formatting_space!(self);
-            self.emit_block_stmt(finally)?;
+            self.emit_block_stmt(finally);
         }
-        Ok(())
     }
 
-    fn emit_while_stmt(&mut self, node: &WhileStmt) -> Result {
+    fn emit_while_stmt(&mut self, node: &WhileStmt) {
         keyword!(self, "while");
         formatting_space!(self);
         punct!(self, "(");
-        self.emit_expr(&node.test)?;
+        self.emit_expr(&node.test);
         punct!(self, ")");
 
-        self.emit_single_stmt_ctx_block(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false);
     }
 
-    fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) -> Result {
+    fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) {
         keyword!(self, "do");
-        self.emit_single_stmt_ctx_block(&node.body, true, false)?;
+        self.emit_single_stmt_ctx_block(&node.body, true, false);
 
         keyword!(self, "while");
 
         formatting_space!(self);
 
         punct!(self, "(");
-        self.emit_expr(&node.test)?;
+        self.emit_expr(&node.test);
         punct!(self, ")");
-        Ok(())
     }
 
-    fn emit_for_stmt(&mut self, node: &ForStmt) -> Result {
+    fn emit_for_stmt(&mut self, node: &ForStmt) {
         keyword!(self, "for");
         formatting_space!(self);
         punct!(self, "(");
@@ -2866,16 +2771,16 @@ impl Emitter<'_> {
         opt_leading_space!(self, emit_expr, node.update);
         punct!(self, ")");
 
-        self.emit_single_stmt_ctx_block(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false);
     }
 
-    fn emit_for_in_stmt(&mut self, node: &ForInStmt) -> Result {
+    fn emit_for_in_stmt(&mut self, node: &ForInStmt) {
         keyword!(self, "for");
         formatting_space!(self);
         punct!(self, "(");
         let old_flags = self.flags;
         self.flags.set(Flags::in_for_stmt_head, true);
-        self.emit_var_decl_or_pat(&node.left)?;
+        self.emit_var_decl_or_pat(&node.left);
 
         if for_var_ends_with_alpha_num(&node.left) {
             space!(self);
@@ -2885,21 +2790,21 @@ impl Emitter<'_> {
 
         keyword!(self, "in");
 
-        if self.expr_starts_with_alpha_num(&node.right)? {
+        if self.expr_starts_with_alpha_num(&node.right) {
             space!(self);
         } else {
             formatting_space!(self);
         }
-        self.emit_expr(&node.right)?;
+        self.emit_expr(&node.right);
 
         self.flags = old_flags;
 
         punct!(self, ")");
 
-        self.emit_single_stmt_ctx_block(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false);
     }
 
-    fn emit_for_of_stmt(&mut self, node: &ForOfStmt) -> Result {
+    fn emit_for_of_stmt(&mut self, node: &ForOfStmt) {
         keyword!(self, "for");
         if node.is_await {
             space!(self);
@@ -2926,7 +2831,7 @@ impl Emitter<'_> {
             keyword!(self, get_span!(self, node.left.node_id()), "await");
             punct!(self, ")");
         } else {
-            self.emit_var_decl_or_pat(&node.left)?;
+            self.emit_var_decl_or_pat(&node.left);
         }
 
         if for_var_ends_with_alpha_num(&node.left) {
@@ -2938,7 +2843,7 @@ impl Emitter<'_> {
         keyword!(self, "of");
 
         let right_needs_parens = matches!(node.right.as_ref(), Expr::Seq(..) | Expr::Await(..));
-        if !right_needs_parens && self.expr_starts_with_alpha_num(&node.right)? {
+        if !right_needs_parens && self.expr_starts_with_alpha_num(&node.right) {
             space!(self);
         } else {
             formatting_space!(self);
@@ -2946,27 +2851,25 @@ impl Emitter<'_> {
 
         if right_needs_parens {
             punct!(self, "(");
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
             punct!(self, ")");
         } else {
-            self.emit_expr(&node.right)?;
+            self.emit_expr(&node.right);
         }
 
         punct!(self, ")");
-        self.emit_single_stmt_ctx_block(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false);
     }
 }
 
 impl Emitter<'_> {
-    fn write_delim(&mut self, f: ListFormat) -> Result {
+    fn write_delim(&mut self, f: ListFormat) {
         if f.intersects(ListFormat::CommaDelimited) {
-            self.wr.write_punct(None, Punct::Comma)
-        } else {
-            Ok(())
+            self.wr.write_punct(None, Punct::Comma);
         }
     }
 
-    fn emit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) -> Result {
+    fn emit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) {
         match node {
             VarDeclOrExpr::Expr(node) => self.emit_expr(node),
             VarDeclOrExpr::VarDecl(node) => self.emit_var_decl(node),
@@ -2989,7 +2892,7 @@ impl Emitter<'_> {
     /// in the second, it will make the resulting expression a prefix increment
     /// whose operand is a plus expression - (++(+x)) The same is true of minus of
     /// course.
-    fn should_emit_whitespace_before_operand(&self, node: &UnaryExpr) -> io::Result<bool> {
+    fn should_emit_whitespace_before_operand(&self, node: &UnaryExpr) -> bool {
         if let UnaryExpr {
             op: op!("void") | op!("typeof") | op!("delete"),
             ..
@@ -3007,7 +2910,7 @@ impl Emitter<'_> {
             | Expr::Unary(UnaryExpr {
                 op: op!(unary, "+"),
                 ..
-            }) if node.op == op!(unary, "+") => Ok(true),
+            }) if node.op == op!(unary, "+") => true,
             Expr::Update(UpdateExpr {
                 op: op!("--"),
                 prefix: true,
@@ -3016,12 +2919,12 @@ impl Emitter<'_> {
             | Expr::Unary(UnaryExpr {
                 op: op!(unary, "-"),
                 ..
-            }) if node.op == op!(unary, "-") => Ok(true),
-            _ => Ok(false),
+            }) if node.op == op!(unary, "-") => true,
+            _ => false,
         }
     }
 
-    fn expr_ends_with_alpha_num(&self, expr: &Expr) -> io::Result<bool> {
+    fn expr_ends_with_alpha_num(&self, expr: &Expr) -> bool {
         let last = {
             let mut buffer = String::new();
             {
@@ -3034,14 +2937,14 @@ impl Emitter<'_> {
                     flags: self.flags,
                 };
 
-                new.emit_expr(expr)?;
+                new.emit_expr(expr);
             }
             *buffer.as_bytes().last().unwrap()
         };
-        Ok(is_alpha_num(last))
+        is_alpha_num(last)
     }
 
-    fn expr_starts_with_alpha_num(&self, expr: &Expr) -> io::Result<bool> {
+    fn expr_starts_with_alpha_num(&self, expr: &Expr) -> bool {
         let first = {
             let mut buffer = String::new();
             {
@@ -3054,14 +2957,14 @@ impl Emitter<'_> {
                     flags: self.flags,
                 };
 
-                new.emit_expr(expr)?;
+                new.emit_expr(expr);
             }
             *buffer.as_bytes().first().unwrap()
         };
-        Ok(is_alpha_num(first))
+        is_alpha_num(first)
     }
 
-    fn stmt_starts_with_alpha_num(&self, stmt: &Stmt) -> io::Result<bool> {
+    fn stmt_starts_with_alpha_num(&self, stmt: &Stmt) -> bool {
         match stmt {
             Stmt::Expr(expr) => self.expr_starts_with_alpha_num(&expr.expr),
             Stmt::Decl(..)
@@ -3079,8 +2982,8 @@ impl Emitter<'_> {
             | Stmt::For(..)
             | Stmt::ForIn(..)
             | Stmt::ForOf(..)
-            | Stmt::If(..) => Ok(true),
-            Stmt::Block(..) | Stmt::Empty(..) => Ok(false),
+            | Stmt::If(..) => true,
+            Stmt::Block(..) | Stmt::Empty(..) => false,
         }
     }
 }
@@ -3321,7 +3224,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                             buf.push('\\');
                         }
 
-                        if let Some(c @ 'D' | c @ 'd') = next {
+                        if let Some(c @ ('D' | 'd')) = next {
                             let mut inner_buf = String::new();
 
                             inner_buf.push('\\');
@@ -3340,15 +3243,12 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                             for _ in 0..3 {
                                 let c = inner_iter.next();
 
-                                match c {
-                                    Some('0'..='9') | Some('a'..='f') | Some('A'..='F') => {
-                                        inner_buf.push(c.unwrap());
-                                    }
-                                    _ => {
-                                        is_valid = false;
+                                if let Some('0'..='9' | 'a'..='f' | 'A'..='F') = c {
+                                    inner_buf.push(c.unwrap());
+                                } else {
+                                    is_valid = false;
 
-                                        break;
-                                    }
+                                    break;
                                 }
                             }
 

@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use anyhow::{Context, Error, Result, bail};
+use anyhow::{Error, Result, bail};
 use codegen::{self, Emitter, JsWriter};
 use common::{
     FileName, SourceMap,
@@ -152,9 +152,7 @@ fn compile(
         &program_data,
     );
 
-    emitter
-        .emit_program(&result)
-        .context("Failed to emit module")?;
+    emitter.emit_program(&result);
 
     let output_ast_string = serde_json::to_string_pretty(&result)?;
 

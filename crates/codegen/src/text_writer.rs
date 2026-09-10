@@ -1,4 +1,3 @@
-use super::Result;
 use common::{BytePos, DUMMY_SP, LineCol, Span};
 
 /// Ported from `createTextWriter` of the typescript compiler.
@@ -33,32 +32,28 @@ impl<'a> JsWriter<'a> {
         }
     }
 
-    fn write_indent_string(&mut self) -> Result {
+    fn write_indent_string(&mut self) {
         const INDENT: &str = "    ";
 
         for _ in 0..self.indent {
-            self.raw_write(INDENT)?;
+            self.raw_write(INDENT);
         }
-
-        Ok(())
     }
 
-    fn raw_write(&mut self, data: &str) -> Result {
+    fn raw_write(&mut self, data: &str) {
         self.wr.push_str(data);
         self.line_pos += data.len();
-        Ok(())
     }
 
-    fn raw_write_byte(&mut self, data: u8) -> Result {
+    fn raw_write_byte(&mut self, data: u8) {
         self.wr.push(data as char);
         self.line_pos += 1;
-        Ok(())
     }
 
-    fn write(&mut self, span: Option<Span>, data: &str) -> Result {
+    fn write(&mut self, span: Option<Span>, data: &str) {
         if !data.is_empty() {
             if self.line_start {
-                self.write_indent_string()?;
+                self.write_indent_string();
                 self.line_start = false;
             }
 
@@ -68,7 +63,7 @@ impl<'a> JsWriter<'a> {
                 }
             }
 
-            self.raw_write(data)?;
+            self.raw_write(data);
 
             if let Some(span) = span {
                 if !span.is_dummy() {
@@ -76,13 +71,11 @@ impl<'a> JsWriter<'a> {
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn write_byte(&mut self, span: Option<Span>, data: u8) -> Result {
+    fn write_byte(&mut self, span: Option<Span>, data: u8) {
         if self.line_start {
-            self.write_indent_string()?;
+            self.write_indent_string();
             self.line_start = false;
         }
 
@@ -92,15 +85,13 @@ impl<'a> JsWriter<'a> {
             }
         }
 
-        self.raw_write_byte(data)?;
+        self.raw_write_byte(data);
 
         if let Some(span) = span {
             if !span.is_dummy() {
                 self.srcmap(span.hi());
             }
         }
-
-        Ok(())
     }
 
     fn srcmap(&mut self, byte_pos: BytePos) {
@@ -117,59 +108,52 @@ impl<'a> JsWriter<'a> {
 }
 
 impl JsWriter<'_> {
-    pub(super) fn increase_indent(&mut self) -> Result {
-        self.commit_pending_semi()?;
+    pub(super) fn increase_indent(&mut self) {
+        self.commit_pending_semi();
         self.indent += 1;
-        Ok(())
     }
-    pub(super) fn decrease_indent(&mut self) -> Result {
-        self.commit_pending_semi()?;
+    pub(super) fn decrease_indent(&mut self) {
+        self.commit_pending_semi();
         self.indent -= 1;
-        Ok(())
     }
 
     /// This *may* write semicolon.
     pub(super) fn write_semi(&mut self, span: Option<Span>) {
         self.pending_semi = Some(span.unwrap_or(DUMMY_SP));
     }
-    pub(super) fn write_space(&mut self) -> Result {
-        self.commit_pending_semi()?;
-        self.write(None, " ")?;
-        Ok(())
+    pub(super) fn write_space(&mut self) {
+        self.commit_pending_semi();
+        self.write(None, " ");
     }
 
-    pub(super) fn write_keyword(&mut self, span: Option<Span>, s: &'static str) -> Result {
-        self.commit_pending_semi()?;
-        self.write(span, s)?;
-        Ok(())
+    pub(super) fn write_keyword(&mut self, span: Option<Span>, s: &'static str) {
+        self.commit_pending_semi();
+        self.write(span, s);
     }
 
-    pub(super) fn write_operator(&mut self, span: Option<Span>, s: &str) -> Result {
-        self.commit_pending_semi()?;
-        self.write(span, s)?;
-        Ok(())
+    pub(super) fn write_operator(&mut self, span: Option<Span>, s: &str) {
+        self.commit_pending_semi();
+        self.write(span, s);
     }
 
-    pub(super) fn write_line(&mut self) -> Result {
-        self.commit_pending_semi()?;
+    pub(super) fn write_line(&mut self) {
+        self.commit_pending_semi();
         if !self.line_start {
-            self.raw_write(self.new_line)?;
+            self.raw_write(self.new_line);
             self.line_count += 1;
             self.line_pos = 0;
             self.line_start = true;
         }
-
-        Ok(())
     }
 
-    pub(super) fn write_lit(&mut self, span: Span, s: &str) -> Result {
-        self.commit_pending_semi()?;
+    pub(super) fn write_lit(&mut self, span: Span, s: &str) {
+        self.commit_pending_semi();
         if !s.is_empty() {
             if !span.is_dummy() {
                 self.srcmap(span.lo());
             }
 
-            self.write(None, s)?;
+            self.write(None, s);
 
             let line_start_of_s = compute_line_starts(s);
             if line_start_of_s.len() > 1 {
@@ -181,47 +165,40 @@ impl JsWriter<'_> {
                 self.srcmap(span.hi());
             }
         }
-
-        Ok(())
     }
 
-    pub(super) fn write_str_lit(&mut self, span: Span, s: &str) -> Result {
-        self.commit_pending_semi()?;
-        self.write(Some(span), s)?;
-        Ok(())
+    pub(super) fn write_str_lit(&mut self, span: Span, s: &str) {
+        self.commit_pending_semi();
+        self.write(Some(span), s);
     }
 
-    pub(super) fn write_symbol(&mut self, span: Span, s: &str) -> Result {
-        self.commit_pending_semi()?;
-        self.write(Some(span), s)?;
-        Ok(())
+    pub(super) fn write_symbol(&mut self, span: Span, s: &str) {
+        self.commit_pending_semi();
+        self.write(Some(span), s);
     }
 
-    pub(super) fn write_punct(&mut self, span: Option<Span>, s: Punct) -> Result {
+    pub(super) fn write_punct(&mut self, span: Option<Span>, s: Punct) {
         if s.commit_pending_semi() {
-            self.commit_pending_semi()?;
+            self.commit_pending_semi();
         } else {
             self.pending_semi = None;
         }
         let byte = PUNCT_MAP[s as usize];
-        self.write_byte(span, byte)?;
-        Ok(())
+        self.write_byte(span, byte);
     }
 
-    pub(super) fn write_multi_byte_punct(&mut self, punct: &[Punct]) -> Result {
+    pub(super) fn write_multi_byte_punct(&mut self, punct: &[Punct]) {
         for &punct in punct {
             let byte = PUNCT_MAP[punct as usize];
-            self.write_byte(None, byte)?;
+            self.write_byte(None, byte);
         }
-        Ok(())
     }
 
-    pub(super) fn commit_pending_semi(&mut self) -> Result {
+    pub(super) fn commit_pending_semi(&mut self) {
         if self.pending_semi.is_some() {
-            self.write(self.pending_semi, ";")?;
+            self.write(self.pending_semi, ";");
             self.pending_semi = None;
         }
-        Ok(())
     }
 }
 
@@ -315,8 +292,8 @@ pub enum Punct {
 }
 
 impl Punct {
-    fn commit_pending_semi(&self) -> bool {
-        *self <= Self::Asterisk
+    fn commit_pending_semi(self) -> bool {
+        self <= Self::Asterisk
     }
 }
 

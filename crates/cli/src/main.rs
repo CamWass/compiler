@@ -100,9 +100,7 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
             &program_data,
         );
 
-        emitter
-            .emit_program(&result)
-            .context("Failed to emit module")?;
+        emitter.emit_program(&result);
 
         buf
     };

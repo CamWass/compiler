@@ -34,7 +34,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
         let writer = text_writer::JsWriter::new("\n", &mut buf, None);
         let mut e = Emitter::new(cfg, cm.clone(), writer, &program_data);
 
-        e.emit_module(&res).unwrap();
+        e.emit_module(&res);
 
         Ok(buf)
     })

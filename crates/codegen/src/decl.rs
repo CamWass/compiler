@@ -1,31 +1,30 @@
 use crate::Context;
 
-use super::{Emitter, Result, list::ListFormat};
+use super::{Emitter, list::ListFormat};
 use ast::*;
 
 impl Emitter<'_> {
-    pub fn emit_decl(&mut self, node: &Decl) -> Result {
+    pub fn emit_decl(&mut self, node: &Decl) {
         match node {
-            Decl::Class(n) => self.emit_class_decl(n)?,
-            Decl::Fn(n) => self.emit_fn_decl(n)?,
+            Decl::Class(n) => self.emit_class_decl(n),
+            Decl::Fn(n) => self.emit_fn_decl(n),
 
             Decl::Var(n) => {
-                self.emit_var_decl(n)?;
+                self.emit_var_decl(n);
                 formatting_semi!(self); // VarDecl is also used for for-loops
             }
         }
-        Ok(())
     }
 
-    fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
+    fn emit_class_decl(&mut self, node: &ClassDecl) {
         keyword!(self, "class");
         space!(self);
-        self.emit_ident(&node.ident)?;
+        self.emit_ident(&node.ident);
 
-        self.emit_class_trailing(&node.class)
+        self.emit_class_trailing(&node.class);
     }
 
-    fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
+    fn emit_fn_decl(&mut self, node: &FnDecl) {
         if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
@@ -39,12 +38,12 @@ impl Emitter<'_> {
             space!(self);
         }
 
-        self.emit_ident(&node.ident)?;
+        self.emit_ident(&node.ident);
 
-        self.emit_fn_trailing(&node.function)
+        self.emit_fn_trailing(&node.function);
     }
 
-    pub fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
+    pub fn emit_var_decl(&mut self, node: &VarDecl) {
         let span = get_span!(self, node.node_id);
 
         {
@@ -68,13 +67,13 @@ impl Emitter<'_> {
         self.emit_list(
             span,
             &node.decls,
-            |e, n| e.emit_var_declarator(n),
+            Emitter::emit_var_declarator,
             ListFormat::VariableDeclarationList,
-        )
+        );
     }
 
-    fn emit_var_declarator(&mut self, node: &VarDeclarator) -> Result {
-        self.emit_binding_pat_or_ident(&node.name)?;
+    fn emit_var_declarator(&mut self, node: &VarDeclarator) {
+        self.emit_binding_pat_or_ident(&node.name);
 
         if let Some(init) = &node.init {
             formatting_space!(self);
@@ -82,10 +81,9 @@ impl Emitter<'_> {
             formatting_space!(self);
             let old = self.ctx;
             self.ctx = Context::ForcedExpr;
-            self.emit_expr(init)?;
+            self.emit_expr(init);
             self.ctx = old;
         }
-        Ok(())
     }
 }
 

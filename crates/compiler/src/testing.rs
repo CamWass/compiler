@@ -76,7 +76,7 @@ impl Tester<'_> {
             &program_data,
         );
 
-        emitter.emit_program(program).unwrap();
+        emitter.emit_program(program);
 
         buf
     }
