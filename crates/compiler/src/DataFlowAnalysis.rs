@@ -342,8 +342,6 @@ impl Annotation for LinearFlowState {}
 
 newtype_index!(pub LatticeElementId);
 
-impl Annotation for LatticeElementId {}
-
 #[derive(Debug)]
 pub struct PrioritizedNode(NodePriority, NodeIndex);
 
