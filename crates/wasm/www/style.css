@@ -51,11 +51,11 @@ body {
 
 .config-container {
   margin-left: 0;
-  min-width: 320px;
+  min-width: 325px;
 }
 
 #config {
-  min-height: 300px;
+  min-height: 370px;
 }
 
 .tab-group-buttons button {

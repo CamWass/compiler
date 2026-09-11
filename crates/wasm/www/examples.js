@@ -8,14 +8,18 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
+    "coalesce_variable_names": false,
     "rename_vars": false,
     "rename_labels": false,
-    "coalesce_variable_names": false,
     "optimize_properties": false,
     "fuse_stmts": false,
+    "inline_functions": false,
+    "convert_to_dot_properties": false,
+    "dead_assignment_elimination": false,
     "optimise_equality": false,
     "remove_dead_code": false,
-    "collapse_variable_declarations": false
+    "collapse_variable_declarations": false,
+    "substitute_alternate_syntax": false
   },
   "ecmascript": {
     "dynamicImport": true,
@@ -30,14 +34,18 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
+    "coalesce_variable_names": false,
     "rename_vars": false,
     "rename_labels": false,
-    "coalesce_variable_names": false,
     "optimize_properties": false,
     "fuse_stmts": false,
+    "inline_functions": false,
+    "convert_to_dot_properties": false,
+    "dead_assignment_elimination": false,
     "optimise_equality": false,
     "remove_dead_code": false,
-    "collapse_variable_declarations": false
+    "collapse_variable_declarations": false,
+    "substitute_alternate_syntax": false
   },
   "ecmascript": {
     "dynamicImport": true,
@@ -67,14 +75,18 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
+    "coalesce_variable_names": false,
     "rename_vars": false,
     "rename_labels": false,
-    "coalesce_variable_names": false,
     "optimize_properties": true,
     "fuse_stmts": false,
+    "inline_functions": false,
+    "convert_to_dot_properties": false,
+    "dead_assignment_elimination": false,
     "optimise_equality": false,
     "remove_dead_code": false,
-    "collapse_variable_declarations": false
+    "collapse_variable_declarations": false,
+    "substitute_alternate_syntax": false
   },
   "ecmascript": {
     "dynamicImport": true,
@@ -118,14 +130,18 @@ result.prop3;
     config: `{
   "pretty_print": false,
   "passes": {
+    "coalesce_variable_names": true,
     "rename_vars": true,
     "rename_labels": true,
-    "coalesce_variable_names": true,
     "optimize_properties": false,
     "fuse_stmts": true,
+    "inline_functions": false,
+    "convert_to_dot_properties": true,
+    "dead_assignment_elimination": true,
     "optimise_equality": true,
     "remove_dead_code": true,
-    "collapse_variable_declarations": true
+    "collapse_variable_declarations": true,
+    "substitute_alternate_syntax": true
   },
   "ecmascript": {
     "dynamicImport": true,
