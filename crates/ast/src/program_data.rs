@@ -50,7 +50,7 @@ macro_rules! make_built_ins {
     ($($name:literal),* $(,)?) => {
         // Use $crate::paste so consuming crates don't need `paste` in their Cargo.toml:
         $crate::paste::paste! {
-            const BUILT_IN_NAMES: &[&str] = &[$(stringify!($name)),*];
+            const BUILT_IN_NAMES: &[&str] = &[$($name),*];
 
             const fn built_in_index(name: &str) -> u32 {
                 let mut i = 0;
@@ -66,7 +66,7 @@ macro_rules! make_built_ins {
             $(
                 #[allow(non_upper_case_globals)]
                 pub const [< $name _ID >]: NameId =
-                    NameId::from_u32(built_in_index(stringify!($name)));
+                    NameId::from_u32(built_in_index($name));
             )*
 
             #[macro_export]
