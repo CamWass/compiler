@@ -78,16 +78,6 @@ macro_rules! make_built_ins {
                 )*
             }
         }
-
-        impl ProgramData {
-            fn add_built_ins(&mut self) {
-                // TODO: possible to optimise since there are no existing
-                // entries, but might not be worth it.
-                $(
-                    self.get_id_for_name($name.into());
-                )*
-            }
-        }
     };
 }
 
@@ -316,16 +306,33 @@ pub struct ProgramData {
 
 impl ProgramData {
     fn new() -> Self {
-        let mut data = Self {
+        let mut name_to_id = HashTable::with_capacity(BUILT_IN_NAMES.len());
+        let mut names = IndexVec::with_capacity(BUILT_IN_NAMES.len());
+
+        let hasher = BuildHasherDefault::default();
+
+        // Initialise names and name map with built-in names.
+        for &name in BUILT_IN_NAMES {
+            let name_hash = hasher.hash_one(name);
+            let id = names.push((name.to_string(), name_hash));
+            name_to_id.insert_unique(name_hash, id, |&stored_id| {
+                if cfg!(debug_assertions) {
+                    // We created the HashTable with enough capacity.
+                    unreachable!(
+                        "Built in name map should not re-hash/re-alloc during initialisation"
+                    );
+                }
+
+                names[stored_id].1
+            });
+        }
+
+        Self {
             spans: IndexVec::default(),
-            names: IndexVec::default(),
-            name_to_id: HashTable::default(),
-            hasher: BuildHasherDefault::default(),
-        };
-
-        data.add_built_ins();
-
-        data
+            names,
+            name_to_id,
+            hasher,
+        }
     }
 
     fn new_id(&mut self, span: Span) -> NodeId {
