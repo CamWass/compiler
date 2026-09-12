@@ -138,6 +138,7 @@ pub(super) enum SyntaxError {
     ExportDefaultWithOutFrom,
 
     NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
+    NumericSeparatorInEscapeSequence,
 
     TS1003,
     TS1005,
@@ -372,6 +373,9 @@ impl SyntaxError {
 
             SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits => {
                 "A numeric separator is only allowed between two digits".into()
+            }
+            SyntaxError::NumericSeparatorInEscapeSequence => {
+                "Numeric separators are not allowed inside unicode escape sequences or hex escape sequences".into()
             }
 
             SyntaxError::NullishCoalescingWithLogicalOp => {

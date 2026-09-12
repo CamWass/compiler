@@ -98,8 +98,6 @@ impl Lexer<'_> {
         raw: &mut String,
         allow_num_separator: bool,
     ) {
-        let start = self.cur_pos();
-
         while let Some(c) = self.cur() {
             if c == '_' {
                 let next = self.peek_nth(1);
@@ -110,20 +108,16 @@ impl Lexer<'_> {
                     || is_forbidden_numeric_separator_sibling(prev, radix)
                     || is_forbidden_numeric_separator_sibling(next, radix)
                 {
-                    // TODO: possibly use babel's error
-                    // self.raise(self.state.pos, Errors.UnexpectedNumericSeparator);
                     self.emit_error(
-                        start,
+                        self.cur_pos(),
                         SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
                     );
                 }
 
                 if !allow_num_separator {
-                    // TODO: possibly use babel's error
-                    // self.raise(self.state.pos, Errors.NumericSeparatorInEscapeSequence);
                     self.emit_error(
-                        start,
-                        SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
+                        self.cur_pos(),
+                        SyntaxError::NumericSeparatorInEscapeSequence,
                     );
                 }
 
