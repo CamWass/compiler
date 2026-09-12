@@ -81,9 +81,6 @@ macro_rules! make_built_ins {
     };
 }
 
-// TODO: maybe re-order this so e.g. reserved names are in a dense range, so we
-// use simplified condition checks instead of matching.
-// Also consider lookup tables, since the built-ins fit within a u8.
 make_built_ins!(
     // The lexer relies on this section having the lowest values (i.e. starting
     // at zero) and having the same ordering as the corresponding Tokens, so

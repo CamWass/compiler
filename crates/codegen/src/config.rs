@@ -7,10 +7,8 @@ pub struct Config {
     /// This defaults to [`EsVersion::latest`] because it preserves input as much
     /// as possible.
     ///
-    /// Note: This does not verify if output is valid for the target runtime.
-    /// e.g. `const foo = 1;` with [`EsVersion::Es3`] will emitted as `const foo =
-    /// 1` without verification.
-    /// This is because it's not a concern of the code generator.
+    /// Note: This does not verify if the output is valid for the target
+    /// runtime, or attempt to transpile newer features for older runtimes.
     pub target: EsVersion,
 
     pub minify: bool,

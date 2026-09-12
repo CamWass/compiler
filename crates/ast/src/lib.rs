@@ -5,8 +5,6 @@
 #![deny(variant_size_differences)]
 #![deny(unused)]
 #![feature(iter_order_by)]
-// TODO:
-#![recursion_limit = "256"]
 
 pub use self::{
     class::{

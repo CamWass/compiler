@@ -10,7 +10,6 @@ use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
-/// Use when only block statements are allowed.
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct BlockStmt {
     pub node_id: NodeId,
@@ -51,7 +50,6 @@ pub enum Stmt {
 
     Throw(ThrowStmt),
 
-    /// A try statement. If handler is null then finalizer must be a BlockStmt.
     Try(Box<TryStmt>),
 
     While(WhileStmt),
@@ -262,12 +260,8 @@ impl SwitchCase {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct CatchClause {
     pub node_id: NodeId,
-    /// es2019
-    ///
-    /// The param is null if the catch binding is omitted. E.g., try { foo() }
-    /// catch { bar() }
-    pub param: Option<BindingPatOrIdent>,
 
+    pub param: Option<BindingPatOrIdent>,
     pub body: BlockStmt,
 }
 

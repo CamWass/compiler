@@ -259,7 +259,7 @@ const chain = window.a.x.y.b.x.y.c.x.y?.d.x.y.e.x.y
             "const o = {a: 1,b() {}, c() {},  get d() {},  set e(x) {}};",
         );
 
-        // test static keyword
+        // Test static keyword.
         test_transform(
             "
 class C {

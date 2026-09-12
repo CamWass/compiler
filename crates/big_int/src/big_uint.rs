@@ -195,8 +195,9 @@ fn integer_decode_f64(f: f64) -> (u64, i16, i8) {
 
 impl Ord for BigUintValue {
     fn cmp(&self, other: &Self) -> Ordering {
-        // 1. A string with more digits is numerically larger/
-        // 2. If length is equal, lexicographical comparison matches numerical comparison/
+        // 1. A string with more digits is numerically larger.
+        // 2. If length is equal, lexicographical comparison matches numerical
+        // comparison.
         self.raw
             .len()
             .cmp(&other.raw.len())

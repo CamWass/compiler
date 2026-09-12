@@ -32,7 +32,7 @@ impl GetNodeId for BindingIdent {
     }
 }
 
-/// Ident.
+/// Identifier.
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Ident {
     pub node_id: NodeId,

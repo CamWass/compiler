@@ -71,7 +71,5 @@ pub struct VarDeclarator {
     pub node_id: NodeId,
 
     pub name: BindingPatOrIdent,
-
-    /// Initialization expression.
     pub init: Option<Box<Expr>>,
 }

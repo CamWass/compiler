@@ -153,17 +153,6 @@ mod tests {
         assert_min("[,,1];", "[,,1]");
     }
 
-    // #[test]
-    // fn sparse_array_expression_pretty() {
-    //     assert_pretty("[]", "[];");
-    //     assert_pretty("[,]", "[, ];");
-    //     assert_pretty("[1,]", "[1, ];");
-    //     assert_pretty("[,1]", "[, 1];");
-    //     assert_pretty("[,,];", "[, , ];");
-    //     assert_pretty("[1,,];", "[1, , ];");
-    //     assert_pretty("[,,1];", "[, , 1];");
-    // }
-
     #[test]
     fn object_expression() {
         assert_min("({});", "({})");
@@ -173,8 +162,6 @@ mod tests {
         assert_min("({ foo: 10, bar: 20 });", "({foo:10,bar:20})");
         assert_min("({ foo: 10, bar() {} });", "({foo:10,bar(){}})");
         assert_min("({ foo(bar, baz) {} });", "({foo(bar,baz){}})");
-        // let expected = "({\n    foo: true,\n    bar: false\n});";
-        // assert_pretty("({ foo: true, bar: false })", expected);
         assert_min("({a: a})", "({a})");
     }
 

@@ -7,6 +7,7 @@ pub trait SourceMapperExt {
     fn get_code_map(&self) -> &dyn SourceMapper;
 
     fn is_on_same_line(&self, _lo: BytePos, _hi: BytePos) -> bool {
+        // TODO:
         // let cm = self.get_code_map();
 
         // let lo = cm.lookup_char_pos(lo);

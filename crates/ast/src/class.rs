@@ -24,10 +24,8 @@ pub struct ExtendsClause {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ClassMember {
     Constructor(Constructor),
-    /// `es2015`
     Method(ClassMethod),
     PrivateMethod(PrivateMethod),
-    /// stage 0 / Typescript
     ClassProp(ClassProp),
     PrivateProp(PrivateProp),
 }

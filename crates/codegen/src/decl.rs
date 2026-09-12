@@ -11,7 +11,8 @@ impl Emitter<'_> {
 
             Decl::Var(n) => {
                 self.emit_var_decl(n);
-                formatting_semi!(self); // VarDecl is also used for for-loops
+                // VarDecl is also used for for-loops.
+                formatting_semi!(self);
             }
         }
     }

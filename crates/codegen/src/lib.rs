@@ -425,7 +425,7 @@ impl<'a> Emitter<'a> {
 
         if ctx == Context::Default {
             match node {
-                // might have a child expr in start of stmt
+                // Might have a child expr in start of stmt.
                 Expr::OptChain(_)
                 | Expr::Member(_)
                 | Expr::Bin(_)
@@ -477,14 +477,11 @@ impl<'a> Emitter<'a> {
                 let wrap_callee = match &n.callee {
                     ExprOrSuper::Super(_) => false,
                     ExprOrSuper::Expr(callee) => match callee.as_ref() {
-                        // Function expression cannot start with `function`
+                        // Function expression cannot start with `function`.
                         Expr::Fn(_) => match ctx {
                             Context::ForcedExpr | Context::FreeExpr => false,
 
-                            Context::NewCallee => {
-                                // wrap_expr = true;
-                                false
-                            }
+                            Context::NewCallee => false,
 
                             _ => true,
                         },
@@ -1077,7 +1074,7 @@ impl<'a> Emitter<'a> {
                 }
 
                 // While simplifying, (1 + x) * Nan becomes `1 + x * Nan`.
-                // But it should be `(1 + x) * Nan`
+                // But it should be `(1 + x) * Nan`.
                 Expr::Bin(BinExpr { op: op_of_lhs, .. }) => {
                     if op_of_lhs.precedence() < expr.op.precedence()
                         || (op_of_lhs.precedence() == expr.op.precedence() && expr.op == op!("**"))
@@ -1148,7 +1145,7 @@ impl<'a> Emitter<'a> {
                     matches!(node.left.as_ref(), Expr::Lit(Lit::Regex(_)))
                         || self.expr_ends_with_alpha_num(&node.left)
                 } else {
-                    // space is mandatory to avoid outputting -->
+                    // Space is mandatory to avoid outputting `-->`.
                     match *node.left {
                         Expr::Update(UpdateExpr {
                             prefix: false, op, ..
@@ -1805,7 +1802,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_kv_prop(&mut self, node: &KeyValueProp) {
-        // Short hand properties e.g. `{foo:foo}` => `{foo}`
+        // Short hand properties e.g. `{foo:foo}` => `{foo}`.
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
                 if let Expr::Ident(value) = node.value.as_ref() {
@@ -1940,8 +1937,7 @@ impl<'a> Emitter<'a> {
         }
 
         if is_empty {
-            // Write a line terminator if the parent node was multi-line
-
+            // Write a line terminator if the parent node was multi-line.
             if format.contains(ListFormat::MultiLine) {
                 if !self.cfg.minify {
                     self.wr.write_line();
@@ -2197,7 +2193,7 @@ impl Emitter<'_> {
     fn emit_binding_property(&mut self, node: &BindingProperty) {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.prop {
-                // Short hand properties e.g. `{foo:foo}` => `{foo}`
+                // Short hand properties e.g. `{foo:foo}` => `{foo}`.
                 if let BindingElement {
                     target: BindingPatOrIdent::Ident(name),
                     init: None,
@@ -2212,7 +2208,7 @@ impl Emitter<'_> {
                     }
                 }
 
-                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
+                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`.
                 if let BindingElement {
                     target: BindingPatOrIdent::Ident(name),
                     init: Some(init),
@@ -2316,7 +2312,7 @@ impl Emitter<'_> {
     fn emit_assignment_property(&mut self, node: &AssignmentProperty) {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.prop {
-                // Short hand properties e.g. `{foo:foo}` => `{foo}`
+                // Short hand properties e.g. `{foo:foo}` => `{foo}`.
                 if let AssignmentElement {
                     target, init: None, ..
                 } = &node.target
@@ -2332,7 +2328,7 @@ impl Emitter<'_> {
                     }
                 }
 
-                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
+                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`.
                 if let AssignmentElement {
                     target,
                     init: Some(init),
@@ -2406,8 +2402,8 @@ impl Emitter<'_> {
 impl Emitter<'_> {
     fn emit_stmt(&mut self, node: &Stmt, ignore_empty: bool) {
         let old = self.ctx;
-        // only ExprStmt would have unparented expr,
-        // which would be handled in its own visit function
+        // Only ExprStmt can have an unparented expr, which would be handled in
+        // its own emit method.
         self.ctx = Context::FreeExpr;
         match node {
             Stmt::Expr(e) => self.emit_expr_stmt(e),
@@ -3090,7 +3086,7 @@ fn unescape_tpl_lit(s: &str) -> String {
                     result.push_str("\\n");
                 }
 
-                // TODO: Handle all escapes
+                // TODO: Handle all escapes.
                 _ => {
                     result.push(c);
                 }
@@ -3206,7 +3202,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                 let next = iter.peek();
 
                 match next {
-                    // TODO fix me - workaround for surrogate pairs
+                    // TODO fix me - workaround for surrogate pairs.
                     Some('u') => {
                         let mut inner_iter = iter.clone();
 
@@ -3336,11 +3332,12 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                 if c.is_ascii() {
                     buf.push(c);
                 } else if c > '\u{FFFF}' {
-                    // if we've got this far the char isn't reserved and if the callee has specified
-                    // we should output unicode for non-ascii chars then we have
-                    // to make sure we output unicode that is safe for the target
-                    // Es5 does not support code point escapes and so surrograte formula must be
-                    // used
+                    // If we've got this far the char isn't reserved and if the
+                    // callee has specified we should output unicode for
+                    // non-ascii chars then we have to make sure we output
+                    // unicode that is safe for the target Es5 does not support
+                    // code point escapes and so surrogate formula must be
+                    // used.
                     if target <= EsVersion::Es5 {
                         // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
                         let h = ((c as u32 - 0x10000) / 0x400) + 0xd800;
@@ -3377,7 +3374,7 @@ fn require_space_before_rhs(rhs: &Expr, op: BinaryOp) -> bool {
             (op!(bin, "-"), op!("--")) | (op!(bin, "+"), op!("++"))
         ),
 
-        // space is mandatory to avoid outputting <!--
+        // Space is mandatory to avoid outputting `<!--`.
         Expr::Unary(UnaryExpr {
             op: op!("!"), arg, ..
         }) if op == op!("<") || op == op!("<<") => {
@@ -3407,7 +3404,8 @@ fn minify_number(num: f64) -> String {
                 break 'hex;
             }
 
-            // use scientific notation
+            // Scientific notation is always shorter for powers of 10 that are
+            // greater than 1000.
             if int.is_multiple_of(1000) {
                 break 'hex;
             }

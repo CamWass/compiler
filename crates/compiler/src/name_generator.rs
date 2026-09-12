@@ -1,7 +1,5 @@
 use rustc_hash::FxHashSet;
 
-// TODO: each generator usually generates a small set of names - we could
-// pregenerate some reasonable number and just maintain an index into that array.
 // TODO: why can't we use '_' as a first char?
 // It is important that the ordering of FIRST_CHAR is as close to NON_FIRST_CHAR
 // as possible. Using the ASCII ordering is not a good idea. The reason

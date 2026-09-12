@@ -143,7 +143,7 @@ impl<'d> Buffer<'d> {
             .as_ref()
             .map(|item| item.had_line_break)
             .unwrap_or({
-                // return true on eof.
+                // Return true on eof.
                 true
             })
     }

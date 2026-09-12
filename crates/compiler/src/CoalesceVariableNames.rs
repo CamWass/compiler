@@ -102,7 +102,7 @@ where
         let (interference_graph, map) = compute_variable_names_interference_graph(&cfg, &liveness);
 
         // Colour any interfering variables with different colours and any variables that can be safely
-        // coalesced wih the same color.
+        // coalesced wih the same colour.
         let coloring = GraphColouring::new(interference_graph, |a, b| {
             liveness.scope_variables[a].cmp(&liveness.scope_variables[b])
         });
@@ -496,9 +496,9 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 /// which pairs of variables are alive at the same time. These pairs are set to true in a bit map.
 /// We take every pairing of variables and use the bit map to check if the two variables are alive
 /// at the same time. If two variables are alive at the same time, we create an edge between them
-/// in the interference graph. The interference graph is the input to a graph coloring algorithm
-/// that ensures any interfering variables are marked in different color groups, while variables
-/// that can safely be coalesced are assigned the same color group.
+/// in the interference graph. The interference graph is the input to a graph colouring algorithm
+/// that ensures any interfering variables are marked in different colour groups, while variables
+/// that can safely be coalesced are assigned the same colour group.
 fn compute_variable_names_interference_graph(
     cfg: &ControlFlowGraph<Node, LinearFlowState>,
     liveness: &LiveVariablesAnalysisResult,

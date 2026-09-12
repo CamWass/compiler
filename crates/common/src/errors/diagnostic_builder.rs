@@ -39,15 +39,6 @@ pub struct DiagnosticBuilder<'a> {
 /// instead of a `&DiagnosticBuilder<'a>`. This `forward!` macro makes
 /// it easy to declare such methods on the builder.
 macro_rules! forward {
-    // Forward pattern for &self -> &Self
-    // (pub fn $n:ident(&self, $($name:ident: $ty:ty),* $(,)*) -> &Self) => {
-    //     pub fn $n(&self, $($name: $ty),*) -> &Self {
-    //         #[allow(deprecated)]
-    //         self.diagnostic.$n($($name),*);
-    //         self
-    //     }
-    // };
-
     // Forward pattern for &mut self -> &mut Self
     (pub fn $n:ident(&mut self, $($name:ident: $ty:ty),* $(,)*) -> &mut Self) => {
         pub fn $n(&mut self, $($name: $ty),*) -> &mut Self {
@@ -274,7 +265,7 @@ impl<'a> DiagnosticBuilder<'a> {
 
     /// Creates a new `DiagnosticBuilder` with an already constructed
     /// diagnostic.
-    #[inline(always)] // box
+    #[inline(always)]
     pub fn new_diagnostic(handler: &'a Handler, diagnostic: Diagnostic) -> DiagnosticBuilder<'a> {
         DiagnosticBuilder {
             handler,

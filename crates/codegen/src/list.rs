@@ -10,7 +10,7 @@ bitflags! {
         /// Default value.
         const None = 0;
 
-        // Line separators
+        // Line separators:
         /// Prints the list on a single line (default).
         const SingleLine = 0;
         /// Prints the list on multiple lines.
@@ -18,7 +18,7 @@ bitflags! {
         /// Prints the list using line preservation if possible.
         const PreserveLines = 1 << 1;
         const LinesMask = Self::SingleLine.bits() | Self::MultiLine.bits() | Self::PreserveLines.bits();
-        // Delimiters
+        // Delimiters:
         /// Each list item is comma (",") delimited.
         const CommaDelimited = 1 << 2;
         const DelimitersMask = Self::CommaDelimited.bits();
@@ -26,7 +26,7 @@ bitflags! {
         /// Write a trailing comma (",") if present.
         const AllowTrailingComma = 1 << 3;
 
-        // Whitespace
+        // Whitespace:
         /// The list should be indented.
         const Indented = 1 << 4;
         /// Inserts a space after the opening brace and before the closing
@@ -35,7 +35,7 @@ bitflags! {
         /// Inserts a space between each sibling node.
         const SpaceBetweenSiblings = 1 << 6;
 
-        // Brackets/Braces
+        // Brackets/Braces:
         /// The list is surrounded by "{" and "}".
         const Braces = 1 << 7;
         /// The list is surrounded by "(" and ")".
@@ -49,7 +49,7 @@ bitflags! {
         /// Do not emit brackets if the list is empty.
         const OptionalIfEmpty = 1 << 11;
 
-        // Others
+        // Others:
         /// Do not emit a trailing NewLine for a MultiLine list.
         const NoTrailingNewLine = 1 << 12;
         /// If the literal is empty, do not add spaces between braces.
@@ -59,7 +59,7 @@ bitflags! {
         // Optimisation.
         const CanSkipTrailingComma = 1 << 15;
 
-        // Precomputed Formats
+        // Precomputed Formats:
         const ObjectBindingPatternElements = Self::SingleLine.bits()
             | Self::SpaceBetweenBraces.bits()
             | Self::CommaDelimited.bits()
