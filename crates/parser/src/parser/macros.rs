@@ -19,7 +19,7 @@ macro_rules! expect {
             syntax_error!(
                 $parser,
                 $parser.input.cur_span(),
-                SyntaxError::Expected(tok!($t), cur)
+                SyntaxError::ExpectedToken(tok!($t), cur)
             )
         }
     }};

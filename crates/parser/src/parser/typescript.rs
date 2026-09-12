@@ -135,7 +135,7 @@ impl Parser<'_> {
                 let cur = self.input.dump_cur();
                 self.emit_err(
                     self.input.cur_span(),
-                    SyntaxError::Expected(Token::Comma, cur),
+                    SyntaxError::ExpectedToken(Token::Comma, cur),
                 );
                 continue;
             }
@@ -318,7 +318,7 @@ impl Parser<'_> {
             if !p.eat(return_token) {
                 let cur = p.input.dump_cur();
                 let span = p.input.cur_span();
-                syntax_error!(p, span, SyntaxError::Expected(return_token, cur))
+                syntax_error!(p, span, SyntaxError::ExpectedToken(return_token, cur))
             }
 
             let has_type_pred_asserts = p.is(tok!("asserts")) && p.peek_is_ident_ref();

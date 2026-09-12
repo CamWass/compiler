@@ -129,8 +129,21 @@ impl Parser<'_> {
         }
 
         let PropName::Ident(ident) = key else {
-            // TODO
-            unexpected!(self, "identifier")
+            let got = match key {
+                PropName::Ident(_) => unreachable!(),
+                PropName::Str(_) => "a string",
+                PropName::Num(_) => "a number",
+                PropName::Computed(_) => "a computed property name",
+                PropName::BigInt(_) => "a BigInt",
+            };
+            syntax_error!(
+                self,
+                get_span!(self, key.node_id()),
+                SyntaxError::Expected {
+                    expected: "an identifier",
+                    got,
+                }
+            );
         };
 
         if self.eat(tok!('?')) {

@@ -84,7 +84,11 @@ pub(super) enum SyntaxError {
     },
     ReservedWordInImport,
     AssignProperty,
-    Expected(Token, String),
+    ExpectedToken(Token, String),
+    Expected {
+        expected: &'static str,
+        got: &'static str,
+    },
     ExpectedSemiForExprStmt {
         expr: Span,
     },
@@ -287,8 +291,11 @@ impl SyntaxError {
 
             SyntaxError::ReservedWordInImport => "cannot import as reserved word".into(),
             SyntaxError::AssignProperty => "assignment property is invalid syntax".into(),
-            SyntaxError::Expected(token, got) => {
+            SyntaxError::ExpectedToken(token, got) => {
                 format!("Expected `{token:?}`, got `{got}`").into()
+            }
+            SyntaxError::Expected{expected, got} => {
+                format!("Expected {expected}, got {got}").into()
             }
             SyntaxError::ExpectedSemiForExprStmt { .. } => "Expected ';', '}' or <eof>".into(),
 

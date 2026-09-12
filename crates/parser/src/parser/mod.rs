@@ -215,7 +215,7 @@ impl<'d> Parser<'d> {
         if !self.eat_semi_with_asi() {
             let span = self.input.cur_span();
             let cur = self.input.dump_cur();
-            syntax_error!(self, span, SyntaxError::Expected(tok!(';'), cur))
+            syntax_error!(self, span, SyntaxError::ExpectedToken(tok!(';'), cur))
         }
         Ok(())
     }
