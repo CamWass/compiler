@@ -80,7 +80,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && self.is(tok!("import")) {
-            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.into_expr();
 
             self.eat_semi_with_asi();
 
@@ -92,7 +92,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
 
         if self.input.syntax().import_meta() && self.is(tok!("import")) && self.peeked_is(tok!('.'))
         {
-            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.into_expr();
 
             self.eat_semi_with_asi();
 
@@ -418,7 +418,7 @@ impl Parser<'_> {
         if let MaybeParen::Expr(expr_ref) = &expr {
             if let Expr::Ident(_) = expr_ref.as_ref() {
                 if self.eat(tok!(':')) {
-                    let Expr::Ident(ident) = *expr.unwrap() else {
+                    let Expr::Ident(ident) = *expr.into_expr() else {
                         unreachable!()
                     };
                     return self.parse_labelled_stmt(ident).map(Some);
@@ -440,7 +440,7 @@ impl Parser<'_> {
 
                     return Ok(Some(Stmt::Expr(ExprStmt {
                         node_id: node_id!(self, self.span(start)),
-                        expr: expr.unwrap(),
+                        expr: expr.into_expr(),
                     })));
                 }
 
@@ -485,12 +485,12 @@ impl Parser<'_> {
         if self.eat_semi_with_asi() {
             Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, self.span(start)),
-                expr: expr.unwrap(),
+                expr: expr.into_expr(),
             })))
         } else {
             if self.input.cur().is_binary_op() {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
-                let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
+                let expr = self.parse_bin_op_recursively(expr, 0)?.into_expr();
                 return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self, self.span(start)),
                     expr,
@@ -553,7 +553,7 @@ impl Parser<'_> {
         let body = Box::new(self.ensure_block_stmt(body));
 
         expect!(self, "while");
-        let test = self.parse_header_expr()?.unwrap();
+        let test = self.parse_header_expr()?.into_expr();
         self.eat(tok!(';'));
 
         Ok(Stmt::DoWhile(DoWhileStmt {
@@ -679,7 +679,7 @@ impl Parser<'_> {
 
         // for (a of b)
         if matches!(self.input.cur(), tok!("of") | tok!("in")) {
-            let pat = self.reparse_expr_as_assign_target(init.unwrap());
+            let pat = self.reparse_expr_as_assign_target(init.into_expr());
 
             return self.parse_for_each_head(VarDeclOrAssignTarget::AssignTarget(pat));
         }
@@ -692,7 +692,7 @@ impl Parser<'_> {
         for prop in assign_props {
             self.emit_err(prop, SyntaxError::AssignProperty);
         }
-        self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::Expr(init.unwrap()))))
+        self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::Expr(init.into_expr()))))
     }
 
     fn parse_for_each_head(&mut self, left: VarDeclOrAssignTarget) -> PResult<ForHead> {
@@ -701,7 +701,7 @@ impl Parser<'_> {
             let right = self
                 .include_in_expr(true)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
             Ok(ForHead::ForOf {
                 left: Box::new(left),
                 right,
@@ -710,7 +710,7 @@ impl Parser<'_> {
             let right = self
                 .include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
             Ok(ForHead::ForIn {
                 left: Box::new(left),
                 right,
@@ -725,7 +725,7 @@ impl Parser<'_> {
             let test = self
                 .include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)
-                .map(MaybeParen::unwrap)
+                .map(MaybeParen::into_expr)
                 .map(Some)?;
             expect!(self, ';');
             test
@@ -736,7 +736,7 @@ impl Parser<'_> {
         } else {
             self.include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)
-                .map(MaybeParen::unwrap)
+                .map(MaybeParen::into_expr)
                 .map(Some)?
         };
 
@@ -754,7 +754,7 @@ impl Parser<'_> {
         let test = self
             .include_in_expr(true)
             .parse_expr(&mut AssignProps::Emit)?
-            .unwrap();
+            .into_expr();
         if !self.eat(tok!(')')) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
@@ -802,7 +802,7 @@ impl Parser<'_> {
         } else {
             self.include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)
-                .map(MaybeParen::unwrap)
+                .map(MaybeParen::into_expr)
                 .map(Some)?
         };
 
@@ -822,7 +822,7 @@ impl Parser<'_> {
 
         self.assert_and_bump(tok!("switch"));
 
-        let discriminant = self.parse_header_expr()?.unwrap();
+        let discriminant = self.parse_header_expr()?.into_expr();
         let mut cases = vec![];
         let mut span_of_previous_default = None;
 
@@ -852,7 +852,7 @@ impl Parser<'_> {
                     parser
                         .with_ctx(ctx)
                         .parse_expr(&mut AssignProps::Emit)
-                        .map(MaybeParen::unwrap)
+                        .map(MaybeParen::into_expr)
                         .map(Some)?
                 } else {
                     if let Some(previous) = span_of_previous_default {
@@ -906,7 +906,7 @@ impl Parser<'_> {
         let arg = self
             .include_in_expr(true)
             .parse_expr(&mut AssignProps::Emit)?
-            .unwrap();
+            .into_expr();
         self.expect_semi_with_asi()?;
 
         Ok(Stmt::Throw(ThrowStmt {
@@ -1132,7 +1132,10 @@ impl Parser<'_> {
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !matches!(self.input.cur(), tok!("of") | tok!("in")) {
             if self.eat(tok!('=')) {
-                Some(self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap())
+                Some(
+                    self.parse_assignment_expr(&mut AssignProps::Emit)?
+                        .into_expr(),
+                )
             } else {
                 // Destructuring bindings require initializers, but
                 // typescript allows `declare` vars not to have initializers.
@@ -1167,7 +1170,7 @@ impl Parser<'_> {
 
         self.assert_and_bump(tok!("while"));
 
-        let test = self.parse_header_expr()?.unwrap();
+        let test = self.parse_header_expr()?.into_expr();
 
         let ctx = Context {
             flags: self.ctx().flags
@@ -1200,7 +1203,7 @@ impl Parser<'_> {
 
         self.assert_and_bump(tok!("with"));
 
-        let obj = self.parse_header_expr()?.unwrap();
+        let obj = self.parse_header_expr()?.into_expr();
 
         let ctx = Context {
             flags: self.ctx().flags | ContextFlags::in_function,

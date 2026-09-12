@@ -30,10 +30,14 @@ impl Parser<'_> {
         let expr = self.parse_assignment_expr(assign_props)?;
 
         if self.is(tok!(',')) {
-            let mut exprs = vec![*expr.unwrap()];
+            let mut exprs = vec![*expr.into_expr()];
 
             while self.eat(tok!(',')) {
-                exprs.push(*self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap());
+                exprs.push(
+                    *self
+                        .parse_assignment_expr(&mut AssignProps::Emit)?
+                        .into_expr(),
+                );
             }
 
             return Ok(Box::new(Expr::Seq(SeqExpr {
@@ -151,13 +155,15 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         if let Some(op) = self.input.cur().as_assign_op() {
             let left = if op == AssignOp::Assign {
-                self.reparse_expr_as_assign_target(cond.unwrap())
+                self.reparse_expr_as_assign_target(cond.into_expr())
             } else {
-                AssignTarget::Simple(self.reparse_expr_as_simple_assign_target(cond.unwrap()))
+                AssignTarget::Simple(self.reparse_expr_as_simple_assign_target(cond.into_expr()))
             };
 
             self.input.bump();
-            let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+            let right = self
+                .parse_assignment_expr(&mut AssignProps::Emit)?
+                .into_expr();
             Ok(Box::new(Expr::Assign(AssignExpr {
                 node_id: node_id!(self, self.span(start)),
                 op,
@@ -199,7 +205,7 @@ impl Parser<'_> {
             let cons = self
                 .with_ctx(ctx)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
             expect!(self, ':');
             let ctx = Context {
                 flags: self.ctx().flags | ContextFlags::in_cond_expr,
@@ -208,12 +214,12 @@ impl Parser<'_> {
             let alt = self
                 .with_ctx(ctx)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
             let hi = get_span!(self, alt.node_id()).hi();
             let span = Span::new(start, hi);
             Ok(Box::new(Expr::Cond(CondExpr {
                 node_id: node_id!(self, span),
-                test: test.unwrap(),
+                test: test.into_expr(),
                 cons,
                 alt,
             }))
@@ -434,7 +440,7 @@ impl Parser<'_> {
             let elem = self
                 .include_in_expr(true)
                 .parse_expr_or_spread(assign_props)
-                .map(MaybeParenExprOrSpread::unwrap)
+                .map(MaybeParenExprOrSpread::into_expr_or_spread)
                 .map(Some)?;
 
             if self.is(tok!(',')) {
@@ -556,7 +562,9 @@ impl Parser<'_> {
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p, p.span(start)),
-                                callee: obj.clone_node(program_data!(p).data()).unwrap(),
+                                callee: obj
+                                    .clone_node(program_data!(p).data())
+                                    .into_expr_or_super(),
                                 args,
                             }))
                             .into(),
@@ -565,7 +573,7 @@ impl Parser<'_> {
                     } else if p.is(tok!('`')) {
                         let tag = match &obj {
                             MaybeParenExprOrSuper::Expr(obj) => {
-                                obj.clone_node(program_data!(p).data()).unwrap()
+                                obj.clone_node(program_data!(p).data()).into_expr()
                             }
                             MaybeParenExprOrSuper::Super(_) => unreachable!(),
                         };
@@ -602,7 +610,7 @@ impl Parser<'_> {
             let prop = self
                 .include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
             expect!(self, ']');
             let obj_span_lo = get_span!(self, obj.node_id()).lo();
             let span = Span::new(obj_span_lo, self.input.last_pos());
@@ -610,7 +618,7 @@ impl Parser<'_> {
 
             let base = MemberExpr {
                 node_id: node_id!(self, span),
-                obj: obj.unwrap(),
+                obj: obj.into_expr_or_super(),
                 prop,
                 computed: true,
             };
@@ -635,7 +643,7 @@ impl Parser<'_> {
             let args = self.parse_args(is_import(&obj))?;
             let base = CallExpr {
                 node_id: node_id!(self, self.span(start)),
-                callee: obj.unwrap(),
+                callee: obj.into_expr_or_super(),
                 args,
             };
             let expr = if has_question_dot_token {
@@ -662,7 +670,7 @@ impl Parser<'_> {
 
             let base = MemberExpr {
                 node_id: node_id!(self, span),
-                obj: obj.unwrap(),
+                obj: obj.into_expr_or_super(),
 
                 prop,
                 computed: false,
@@ -683,7 +691,7 @@ impl Parser<'_> {
             MaybeParenExprOrSuper::Expr(expr) => {
                 // MemberExpression[?Yield, ?Await] TemplateLiteral[?Yield, ?Await, +Tagged]
                 if self.is(tok!('`')) {
-                    let tpl = self.parse_tagged_tpl(expr.unwrap())?;
+                    let tpl = self.parse_tagged_tpl(expr.into_expr())?;
                     return Ok((Box::new(Expr::TaggedTpl(tpl)).into(), true));
                 }
 
@@ -755,7 +763,7 @@ impl Parser<'_> {
             let call_expr = Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, self.span(start)),
 
-                callee: callee.unwrap(),
+                callee: callee.into_expr_or_super(),
                 args,
             }))
             .into();
@@ -852,7 +860,7 @@ impl Parser<'_> {
                             let span = Span::new(spread_start, self.input.cur_pos());
                             MaybeParenExprOrSpread::Spread(SpreadElement {
                                 node_id: node_id!(self, span),
-                                expr: expr.unwrap(),
+                                expr: expr.into_expr(),
                             })
                         }
                         None => MaybeParenExprOrSpread::Expr(expr),
@@ -905,7 +913,7 @@ impl Parser<'_> {
                         let cons = self
                             .with_ctx(ctx)
                             .parse_assignment_expr(&mut AssignProps::Emit)?
-                            .unwrap();
+                            .into_expr();
                         expect!(self, ':');
                         let ctx = Context {
                             flags: self.ctx().flags | ContextFlags::in_cond_expr,
@@ -914,7 +922,7 @@ impl Parser<'_> {
                         let alt = self
                             .with_ctx(ctx)
                             .parse_assignment_expr(&mut AssignProps::Emit)?
-                            .unwrap();
+                            .into_expr();
 
                         let hi = get_span!(self, alt.node_id()).hi();
                         let span = Span::new(start, hi);
@@ -922,7 +930,7 @@ impl Parser<'_> {
                             Box::new(Expr::Cond(CondExpr {
                                 node_id: node_id!(self, span),
 
-                                test: test.unwrap(),
+                                test: test.into_expr(),
                                 cons,
                                 alt,
                             }))
@@ -951,7 +959,7 @@ impl Parser<'_> {
                     MaybeParenExprOrSpread::Spread(SpreadElement { expr, node_id, .. }) => {
                         (expr, Some(get_span!(self, node_id)))
                     }
-                    MaybeParenExprOrSpread::Expr(expr) => (expr.unwrap(), None),
+                    MaybeParenExprOrSpread::Expr(expr) => (expr.into_expr(), None),
                 };
 
                 if let Some(span) = spread {
@@ -982,7 +990,9 @@ impl Parser<'_> {
                     }
 
                     if self.eat(tok!('=')) {
-                        let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+                        let right = self
+                            .parse_assignment_expr(&mut AssignProps::Emit)?
+                            .into_expr();
                         // TODO: explain why there shouldn't be any existing
                         // init for these pats (type ann must come before
                         // default value).
@@ -1091,7 +1101,7 @@ impl Parser<'_> {
             let callee = self.parse_member_expr_or_new_expr(is_new_expr, &mut AssignProps::Emit)?;
             return_if_arrow!(self, potential_arrow_start, callee);
 
-            let callee = callee.unwrap();
+            let callee = callee.into_expr();
 
             // Type arguments.
             if self.input.syntax().typescript() && self.is(tok!('<')) {
@@ -1184,7 +1194,7 @@ impl Parser<'_> {
             expr_or_spreads.push(
                 self.include_in_expr(true)
                     .parse_expr_or_spread(&mut AssignProps::Emit)?
-                    .unwrap(),
+                    .into_expr_or_spread(),
             );
         }
 
@@ -1207,7 +1217,7 @@ impl Parser<'_> {
             let span = Span::new(start, self.input.prev_span().hi);
             Ok(MaybeParenExprOrSpread::Spread(SpreadElement {
                 node_id: node_id!(self, span),
-                expr: expr.unwrap(),
+                expr: expr.into_expr(),
             }))
         } else {
             self.parse_assignment_expr(assign_props)
@@ -1350,7 +1360,7 @@ impl Parser<'_> {
             .into_iter()
             .map(|item| -> PResult<_> {
                 match item {
-                    MaybeParenPatOrExprOrSpread::Expr(e) => Ok(ExprOrSpread::Expr(e.unwrap())),
+                    MaybeParenPatOrExprOrSpread::Expr(e) => Ok(ExprOrSpread::Expr(e.into_expr())),
                     MaybeParenPatOrExprOrSpread::Spread(e) => Ok(ExprOrSpread::Spread(e)),
                     MaybeParenPatOrExprOrSpread::BindingElement(p) => {
                         syntax_error!(self, get_span!(self, p.node_id()), SyntaxError::InvalidExpr)
@@ -1452,7 +1462,7 @@ impl Parser<'_> {
                 *self
                     .include_in_expr(true)
                     .parse_expr(&mut AssignProps::Emit)?
-                    .unwrap(),
+                    .into_expr(),
             );
             expect!(self, '}');
             let elem = self.parse_tpl_element(is_tagged)?;
@@ -1544,7 +1554,9 @@ impl Parser<'_> {
             })))
         } else {
             let has_star = self.eat(tok!('*'));
-            let arg = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+            let arg = self
+                .parse_assignment_expr(&mut AssignProps::Emit)?
+                .into_expr();
 
             Ok(Box::new(Expr::Yield(YieldExpr {
                 node_id: node_id!(self, self.span(start)),
@@ -1675,9 +1687,7 @@ pub(super) enum MaybeParen {
 }
 
 impl MaybeParen {
-    // TODO: don't call this unwrap - it gives the impression that this will
-    // panic.
-    pub fn unwrap(self) -> Box<Expr> {
+    pub fn into_expr(self) -> Box<Expr> {
         match self {
             MaybeParen::Expr(expr) => expr,
             MaybeParen::Wrapped(expr) => expr,
@@ -1715,11 +1725,9 @@ enum MaybeParenExprOrSuper {
 }
 
 impl MaybeParenExprOrSuper {
-    // TODO: don't call this unwrap - it gives the impression that this will
-    // panic.
-    fn unwrap(self) -> ExprOrSuper {
+    fn into_expr_or_super(self) -> ExprOrSuper {
         match self {
-            MaybeParenExprOrSuper::Expr(n) => ExprOrSuper::Expr(n.unwrap()),
+            MaybeParenExprOrSuper::Expr(n) => ExprOrSuper::Expr(n.into_expr()),
             MaybeParenExprOrSuper::Super(n) => ExprOrSuper::Super(n),
         }
     }
@@ -1775,11 +1783,9 @@ enum MaybeParenExprOrSpread {
 }
 
 impl MaybeParenExprOrSpread {
-    // TODO: don't call this unwrap - it gives the impression that this will
-    // panic.
-    fn unwrap(self) -> ExprOrSpread {
+    fn into_expr_or_spread(self) -> ExprOrSpread {
         match self {
-            MaybeParenExprOrSpread::Expr(n) => ExprOrSpread::Expr(n.unwrap()),
+            MaybeParenExprOrSpread::Expr(n) => ExprOrSpread::Expr(n.into_expr()),
             MaybeParenExprOrSpread::Spread(n) => ExprOrSpread::Spread(n),
         }
     }

@@ -192,8 +192,8 @@ impl Parser<'_> {
         let node = Box::new(Expr::Bin(BinExpr {
             node_id: node_id!(self, span),
             op,
-            left: left.unwrap(),
-            right: right.unwrap(),
+            left: left.into_expr(),
+            right: right.into_expr(),
         }));
 
         Ok((node.into(), Some(min_prec)))
@@ -229,7 +229,7 @@ impl Parser<'_> {
             let arg = self.parse_unary_expr(&mut AssignProps::Emit)?;
             let hi = get_span!(self, arg.node_id()).hi();
             let span = Span::new(start, hi);
-            let arg = self.reparse_expr_as_simple_assign_target(arg.unwrap());
+            let arg = self.reparse_expr_as_simple_assign_target(arg.into_expr());
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
                 node_id: node_id!(self, span),
@@ -290,7 +290,7 @@ impl Parser<'_> {
             return Ok(Box::new(Expr::Unary(UnaryExpr {
                 node_id: node_id!(self, span),
                 op,
-                arg: arg.unwrap(),
+                arg: arg.into_expr(),
             }))
             .into());
         }
@@ -311,7 +311,7 @@ impl Parser<'_> {
         }
 
         if self.is(tok!("++")) || self.is(tok!("--")) {
-            let expr = self.reparse_expr_as_simple_assign_target(expr.unwrap());
+            let expr = self.reparse_expr_as_simple_assign_target(expr.into_expr());
 
             let op = if self.input.bump() == tok!("++") {
                 op!("++")
@@ -346,7 +346,7 @@ impl Parser<'_> {
             )));
         }
 
-        let arg = self.parse_unary_expr(&mut AssignProps::Emit)?.unwrap();
+        let arg = self.parse_unary_expr(&mut AssignProps::Emit)?.into_expr();
         Ok(Box::new(Expr::Await(AwaitExpr {
             node_id: node_id!(self, self.span(start)),
             arg,

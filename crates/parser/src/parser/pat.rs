@@ -61,7 +61,7 @@ impl Parser<'_> {
             let right = self
                 .include_in_expr(true)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
-                .unwrap();
+                .into_expr();
 
             if self.ctx().in_declare() {
                 self.emit_err(self.span(start), SyntaxError::TS2371);
@@ -198,7 +198,7 @@ impl Parser<'_> {
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
                 }
 
-                let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+                let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.into_expr();
                 if self.ctx().in_declare() {
                     self.emit_err(self.span(start), SyntaxError::TS2371);
                 }
@@ -340,7 +340,7 @@ impl Parser<'_> {
                 let pat = self.parse_binding_pat_or_ident()?;
 
                 if self.eat(tok!('=')) {
-                    let _right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+                    let _right = self.parse_assignment_expr(&mut AssignProps::Emit)?.into_expr();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                 }
 
@@ -1039,7 +1039,7 @@ impl Parser<'_> {
                     }
                 }
                 MaybeParenPatOrExprOrSpread::Expr(expr) => {
-                    params.push(self.reparse_expr_as_binding_element(expr.unwrap()));
+                    params.push(self.reparse_expr_as_binding_element(expr.into_expr()));
                 }
                 MaybeParenPatOrExprOrSpread::BindingElement(pat) => params.push(pat),
             }
@@ -1059,7 +1059,7 @@ impl Parser<'_> {
                 });
             }
             MaybeParenPatOrExprOrSpread::Expr(expr) => {
-                params.push(self.reparse_expr_as_binding_element(expr.unwrap()));
+                params.push(self.reparse_expr_as_binding_element(expr.into_expr()));
             }
             MaybeParenPatOrExprOrSpread::BindingElement(pat) => params.push(pat),
             MaybeParenPatOrExprOrSpread::BindingRestElement(binding_rest_element) => {

@@ -48,7 +48,7 @@ impl Parser<'_> {
             let expr = self
                 .include_in_expr(true)
                 .parse_assignment_expr(assign_props)?
-                .unwrap();
+                .into_expr();
 
             let span = Span::new(start, self.input.last_pos());
             return Ok(Prop::Spread(SpreadAssignment {
@@ -106,7 +106,7 @@ impl Parser<'_> {
             let value = self
                 .include_in_expr(true)
                 .parse_assignment_expr(assign_props)?
-                .unwrap();
+                .into_expr();
             let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
@@ -164,7 +164,7 @@ impl Parser<'_> {
                 let value = self
                     .include_in_expr(true)
                     .parse_assignment_expr(assign_props)?
-                    .unwrap();
+                    .into_expr();
                 let span = Span::new(key_start, self.input.last_pos());
                 match assign_props {
                     AssignProps::Buffer(buffer) => {
@@ -392,7 +392,7 @@ impl Parser<'_> {
                     target: BindingPatOrIdent::Ident(BindingIdent {
                         id: prop.clone_node(program_data!(self).data()),
                     }),
-                    init: Some(value.unwrap()),
+                    init: Some(value.into_expr()),
                 }),
             })
         } else {
@@ -453,7 +453,7 @@ impl Parser<'_> {
                     let mut expr = parser
                         .include_in_expr(true)
                         .parse_assignment_expr(&mut AssignProps::Emit)?
-                        .unwrap();
+                        .into_expr();
 
                     if parser.syntax().typescript() && parser.is(tok!(',')) {
                         let mut exprs = vec![*expr];
@@ -463,7 +463,7 @@ impl Parser<'_> {
                                 *parser
                                     .include_in_expr(true)
                                     .parse_assignment_expr(&mut AssignProps::Emit)?
-                                    .unwrap(),
+                                    .into_expr(),
                             );
                         }
 

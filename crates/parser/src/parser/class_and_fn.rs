@@ -171,7 +171,7 @@ impl Parser<'_> {
             let mut extends_clause = if parser.is(tok!("extends")) {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
-                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
+                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.into_expr();
                 // Super type params.
                 if parser.syntax().typescript() && parser.is(tok!('<')) {
                     parser.parse_ts_type_args()?;
@@ -221,7 +221,7 @@ impl Parser<'_> {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
 
-                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
+                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.into_expr();
                 // Super type params.
                 if parser.syntax().typescript() && parser.is(tok!('<')) {
                     parser.parse_ts_type_args()?;
@@ -750,7 +750,7 @@ impl Parser<'_> {
                 Some(
                     parser
                         .parse_assignment_expr(&mut AssignProps::Emit)?
-                        .unwrap(),
+                        .into_expr(),
                 )
             } else {
                 None
@@ -1091,7 +1091,7 @@ impl FnBodyParser<BlockStmtOrExpr> for Parser<'_> {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
         } else {
             self.parse_assignment_expr(&mut AssignProps::Emit)
-                .map(MaybeParen::unwrap)
+                .map(MaybeParen::into_expr)
                 .map(BlockStmtOrExpr::Expr)
         }
     }

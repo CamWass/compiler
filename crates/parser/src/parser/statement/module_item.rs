@@ -9,7 +9,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         if self.peeked_is(tok!('.')) {
-            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.into_expr();
 
             self.eat_semi_with_asi();
 
@@ -20,7 +20,7 @@ impl Parser<'_> {
         }
 
         if self.input.syntax().dynamic_import() && self.peeked_is(tok!('(')) {
-            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.into_expr();
 
             self.eat_semi_with_asi();
 
@@ -394,7 +394,7 @@ impl Parser<'_> {
                 let expr = self
                     .include_in_expr(true)
                     .parse_assignment_expr(&mut AssignProps::Emit)?
-                    .unwrap();
+                    .into_expr();
                 self.expect_semi_with_asi()?;
                 return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                     node_id: node_id!(self, self.span(start)),
