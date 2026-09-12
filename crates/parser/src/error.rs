@@ -281,7 +281,7 @@ impl SyntaxError {
                                                       binding identifier in strict mode"
                 .into(),
             SyntaxError::UnaryInExp => "** cannot be applied to unary expression".into(),
-            SyntaxError::LineBreakInThrow => "LineBreak cannot follow 'throw'".into(),
+            SyntaxError::LineBreakInThrow => "Newline cannot follow 'throw'".into(),
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()
             }

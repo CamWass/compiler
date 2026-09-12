@@ -899,7 +899,6 @@ impl Parser<'_> {
         self.assert_and_bump(tok!("throw"));
 
         if self.input.had_line_break_before_cur() {
-            // TODO: Suggest throw arg;
             syntax_error!(self, SyntaxError::LineBreakInThrow);
         }
 
