@@ -290,7 +290,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
             }
         }
 
-        Stmt::Labeled(LabeledStmt { body, .. }) => hoist_declarations(body, op),
+        Stmt::Labelled(LabelledStmt { body, .. }) => hoist_declarations(body, op),
 
         Stmt::While(WhileStmt { body, .. })
         | Stmt::DoWhile(DoWhileStmt { body, .. })

@@ -41,9 +41,9 @@ pub use self::{
     },
     stmt::{
         BlockStmt, BreakStmt, CatchClause, ContinueStmt, DebuggerStmt, DoWhileStmt, EmptyStmt,
-        ExprStmt, ForInStmt, ForOfStmt, ForStmt, IfStmt, LabeledStmt, ReturnStmt, Stmt, SwitchCase,
-        SwitchStmt, ThrowStmt, TryStmt, TryStmtTail, VarDeclOrAssignTarget, VarDeclOrExpr,
-        WhileStmt, WithStmt,
+        ExprStmt, ForInStmt, ForOfStmt, ForStmt, IfStmt, LabelledStmt, ReturnStmt, Stmt,
+        SwitchCase, SwitchStmt, ThrowStmt, TryStmt, TryStmtTail, VarDeclOrAssignTarget,
+        VarDeclOrExpr, WhileStmt, WithStmt,
     },
 };
 use big_int::BigUintValue;

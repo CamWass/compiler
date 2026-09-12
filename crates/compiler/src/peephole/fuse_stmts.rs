@@ -87,7 +87,7 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
             f.left.as_ref(),
             VarDeclOrAssignTarget::AssignTarget(AssignTarget::Simple(SimpleAssignTarget::Ident(_)))
         ),
-        Stmt::Labeled(l) => is_fusable_control_statement(&l.body),
+        Stmt::Labelled(l) => is_fusable_control_statement(&l.body),
         Stmt::Block(b) => b.stmts.first().is_some_and(is_fusable_control_statement),
         _ => false,
     }
@@ -141,7 +141,7 @@ fn fuse_expression_into_control_flow_statement(
         Stmt::ForIn(f) => {
             fuse_exprs(seq, &mut f.right);
         }
-        Stmt::Labeled(l) => {
+        Stmt::Labelled(l) => {
             fuse_expression_into_control_flow_statement(seq, &mut l.body, program_data);
         }
         Stmt::Block(b) => {

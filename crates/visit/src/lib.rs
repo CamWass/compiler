@@ -590,7 +590,7 @@ define!({
         Debugger(DebuggerStmt),
         With(WithStmt),
         Return(ReturnStmt),
-        Labeled(LabeledStmt),
+        Labelled(LabelledStmt),
         Break(BreakStmt),
         Continue(ContinueStmt),
         If(IfStmt),
@@ -624,7 +624,7 @@ define!({
         pub node_id: NodeId,
         pub arg: Option<Box<Expr>>,
     }
-    pub struct LabeledStmt {
+    pub struct LabelledStmt {
         pub node_id: NodeId,
         pub label: Ident,
         pub body: Box<Stmt>,

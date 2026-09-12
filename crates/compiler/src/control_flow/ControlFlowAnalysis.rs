@@ -1134,7 +1134,7 @@ where
             .create_edge(catch_node, Branch::Unconditional, Node::from(&node.body));
     }
 
-    fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
+    fn visit_labelled_stmt(&mut self, node: &'ast LabelledStmt) {
         let label_node = Node::from(node);
         self.prioritize_node(label_node);
         self.parent_stack
@@ -1324,7 +1324,7 @@ where
             Stmt::Expr(s) => s.visit_with(self),
             Stmt::With(s) => s.visit_with(self),
             Stmt::Return(s) => s.visit_with(self),
-            Stmt::Labeled(s) => s.visit_with(self),
+            Stmt::Labelled(s) => s.visit_with(self),
             Stmt::Break(s) => s.visit_with(self),
             Stmt::Continue(s) => s.visit_with(self),
             Stmt::If(s) => s.visit_with(self),
@@ -1604,7 +1604,7 @@ where
         [visit_debugger_stmt, DebuggerStmt],
         // [visit_with_stmt, WithStmt],
         // [visit_return_stmt, ReturnStmt],
-        // [visit_labeled_stmt, LabeledStmt],
+        // [visit_labelled_stmt, LabelledStmt],
         // [visit_break_stmt, BreakStmt],
         // [visit_continue_stmt, ContinueStmt],
         // [visit_if_stmt, IfStmt],

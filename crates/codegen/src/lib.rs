@@ -2414,7 +2414,7 @@ impl Emitter<'_> {
             Stmt::Debugger(e) => self.emit_debugger_stmt(e),
             Stmt::With(e) => self.emit_with_stmt(e),
             Stmt::Return(e) => self.emit_return_stmt(e),
-            Stmt::Labeled(e) => self.emit_labeled_stmt(e),
+            Stmt::Labelled(e) => self.emit_labelled_stmt(e),
             Stmt::Break(e) => self.emit_break_stmt(e),
             Stmt::Continue(e) => self.emit_continue_stmt(e),
             Stmt::If(e) => self.emit_if_stmt(e),
@@ -2583,7 +2583,7 @@ impl Emitter<'_> {
         formatting_semi!(self);
     }
 
-    fn emit_labeled_stmt(&mut self, node: &LabeledStmt) {
+    fn emit_labelled_stmt(&mut self, node: &LabelledStmt) {
         self.emit_ident(&node.label);
 
         punct!(self, ":");
@@ -2969,7 +2969,7 @@ impl Emitter<'_> {
             | Stmt::While(..)
             | Stmt::DoWhile(..)
             | Stmt::Return(..)
-            | Stmt::Labeled(..)
+            | Stmt::Labelled(..)
             | Stmt::Break(..)
             | Stmt::Continue(..)
             | Stmt::Switch(..)
@@ -3510,7 +3510,7 @@ fn will_eat_else_token(s: &Stmt, minify: bool) -> bool {
         // Ends with `}`.
         Stmt::Block(..) => false,
 
-        Stmt::Labeled(s) => {
+        Stmt::Labelled(s) => {
             if let Stmt::Block(body) = s.body.as_ref() {
                 if let Some(replacement) =
                     get_single_stmt_ctx_block_replacement(body, minify, false)

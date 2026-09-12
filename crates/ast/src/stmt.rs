@@ -38,7 +38,7 @@ pub enum Stmt {
 
     Return(ReturnStmt),
 
-    Labeled(LabeledStmt),
+    Labelled(LabelledStmt),
 
     Break(BreakStmt),
 
@@ -105,7 +105,7 @@ pub struct ReturnStmt {
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
-pub struct LabeledStmt {
+pub struct LabelledStmt {
     pub node_id: NodeId,
     pub label: Ident,
     pub body: Box<Stmt>,

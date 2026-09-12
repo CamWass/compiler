@@ -343,7 +343,7 @@ impl Visit<'_> for Analyser<'_> {
     }
     fn visit_continue_stmt(&mut self, _: &ContinueStmt) {}
     fn visit_break_stmt(&mut self, _: &BreakStmt) {}
-    fn visit_labeled_stmt(&mut self, node: &LabeledStmt) {
+    fn visit_labelled_stmt(&mut self, node: &LabelledStmt) {
         node.body.visit_with(self);
         // Skip label ident.
     }

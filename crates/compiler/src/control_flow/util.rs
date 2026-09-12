@@ -35,13 +35,13 @@ pub fn compute_fall_through(n: Node) -> Node {
         }
         NodeKind::ForInStmt(ForInStmt { right, .. })
         | NodeKind::ForOfStmt(ForOfStmt { right, .. }) => Node::from(right.as_ref()),
-        NodeKind::LabeledStmt(l) => compute_fall_through(Node::from(&*l.body)),
+        NodeKind::LabelledStmt(l) => compute_fall_through(Node::from(&*l.body)),
         _ => n,
     }
 }
 
 /// Determines whether the given node can be terminated with a BREAK node.
-fn is_break_structure(n: Node, labeled: bool) -> bool {
+fn is_break_structure(n: Node, labelled: bool) -> bool {
     match n.kind {
         NodeKind::ForStmt(_)
         | NodeKind::ForInStmt(_)
@@ -50,7 +50,7 @@ fn is_break_structure(n: Node, labeled: bool) -> bool {
         | NodeKind::WhileStmt(_)
         | NodeKind::SwitchStmt(_) => true,
         // TODO: case ROOT:
-        NodeKind::BlockStmt(_) | NodeKind::IfStmt(_) | NodeKind::TryStmt(_) => labeled,
+        NodeKind::BlockStmt(_) | NodeKind::IfStmt(_) | NodeKind::TryStmt(_) => labelled,
         _ => false,
     }
 }
@@ -143,8 +143,8 @@ pub fn may_throw_exception(n: Node) -> bool {
     v.found
 }
 
-/// Checks if target is actually the break target of labeled continue. The
-/// label can be null if it is an unlabeled break.
+/// Checks if target is actually the break target of labelled continue. The
+/// label can be null if it is an unlabelled break.
 pub fn is_break_target<'ast>(
     target: Node<'ast>,
     target_ancestors: impl Iterator<Item = &'ast ParentNode<'ast>> + Clone,
@@ -153,8 +153,8 @@ pub fn is_break_target<'ast>(
     is_break_structure(target, label.is_some()) && match_label(target_ancestors, label)
 }
 
-/// Checks if target is actually the continue target of labeled continue. The
-/// label can be null if it is an unlabeled continue.
+/// Checks if target is actually the continue target of labelled continue. The
+/// label can be null if it is an unlabelled continue.
 pub fn is_continue_target<'ast>(
     target: Node<'ast>,
     target_ancestors: impl Iterator<Item = &'ast ParentNode<'ast>>,
@@ -173,7 +173,7 @@ pub fn match_label<'ast>(
     match label {
         Some(label) => {
             while let Some(Node {
-                kind: NodeKind::LabeledStmt(target_label),
+                kind: NodeKind::LabelledStmt(target_label),
                 ..
             }) = target
             {

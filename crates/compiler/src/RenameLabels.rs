@@ -94,12 +94,12 @@ macro_rules! handle_scope {
 impl VisitMut<'_> for RenameLabels<'_> {
     fn visit_mut_stmt(&mut self, node: &mut ast::Stmt) {
         match node {
-            ast::Stmt::Labeled(labeled_stmt) => {
+            ast::Stmt::Labelled(labelled_stmt) => {
                 // Determine the new name for this label.
                 let current = self.namespace_stack.last_mut().unwrap();
                 let current_depth = current.rename_map.len() + 1;
                 let id = current_depth;
-                let name = &labeled_stmt.label;
+                let name = &labelled_stmt.label;
 
                 // Store the context for this label name.
                 let li = LabelInfo {
@@ -117,9 +117,9 @@ impl VisitMut<'_> for RenameLabels<'_> {
                     self.names.push(new_name);
                 }
 
-                labeled_stmt.visit_mut_children_with(self);
+                labelled_stmt.visit_mut_children_with(self);
 
-                let label = &mut labeled_stmt.label;
+                let label = &mut labelled_stmt.label;
                 let name = label.name;
 
                 let li = self.get_label_info(name).unwrap();
@@ -132,7 +132,7 @@ impl VisitMut<'_> for RenameLabels<'_> {
                     }
                 } else {
                     // ... and it is not referenced, just remove it.
-                    *node = labeled_stmt.body.as_mut().take();
+                    *node = labelled_stmt.body.as_mut().take();
                 }
                 // Remove the label from the current stack of labels.
                 self.namespace_stack

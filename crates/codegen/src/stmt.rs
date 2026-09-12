@@ -12,7 +12,7 @@ mod tests {
     }
 
     #[test]
-    fn labeled_statement() {
+    fn labelled_statement() {
         assert_min("foo: {}", "foo:;");
         assert_min("foo: bar;", "foo:bar");
     }

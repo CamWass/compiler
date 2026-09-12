@@ -147,7 +147,7 @@ make!(
     DebuggerStmt,
     WithStmt,
     ReturnStmt,
-    LabeledStmt,
+    LabelledStmt,
     BreakStmt,
     ContinueStmt,
     IfStmt,

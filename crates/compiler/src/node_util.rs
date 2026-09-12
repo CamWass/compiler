@@ -387,7 +387,7 @@ pub fn stmt_may_have_side_effects(stmt: &Stmt) -> bool {
             expr_may_have_side_effects(test) || body.stmts.iter().any(stmt_may_have_side_effects)
         }
 
-        Stmt::Labeled(labelled) => stmt_may_have_side_effects(&labelled.body),
+        Stmt::Labelled(labelled) => stmt_may_have_side_effects(&labelled.body),
 
         Stmt::Switch(switch_stmt) => {
             expr_may_have_side_effects(&switch_stmt.discriminant)

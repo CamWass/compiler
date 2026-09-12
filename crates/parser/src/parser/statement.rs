@@ -407,7 +407,7 @@ impl Parser<'_> {
         }
 
         // If the statement does not start with a statement keyword or a
-        // brace, it's an ExpressionStatement or LabeledStatement. We
+        // brace, it's an ExpressionStatement or LabelledStatement. We
         // simply start parsing an expression, and afterwards, if the
         // next token is a colon and the expression was a simple
         // Identifier node, we switch to interpreting it as a label.
@@ -1277,7 +1277,7 @@ impl Parser<'_> {
 
             let body = if matches!(
                 body,
-                Stmt::Labeled(_)
+                Stmt::Labelled(_)
                     | Stmt::Block(_)
                     | Stmt::For(_)
                     | Stmt::ForIn(_)
@@ -1304,7 +1304,7 @@ impl Parser<'_> {
                 Box::new(Stmt::Block(parser.ensure_block_stmt(body)))
             };
 
-            Ok(Stmt::Labeled(LabeledStmt {
+            Ok(Stmt::Labelled(LabelledStmt {
                 node_id: node_id!(parser, parser.span(get_span!(parser, label.node_id).lo())),
                 label,
                 body,

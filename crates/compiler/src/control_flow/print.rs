@@ -199,7 +199,7 @@ where
         [visit_debugger_stmt, DebuggerStmt],
         [visit_with_stmt, WithStmt],
         [visit_return_stmt, ReturnStmt],
-        [visit_labeled_stmt, LabeledStmt],
+        [visit_labelled_stmt, LabelledStmt],
         [visit_break_stmt, BreakStmt],
         [visit_continue_stmt, ContinueStmt],
         [visit_if_stmt, IfStmt],

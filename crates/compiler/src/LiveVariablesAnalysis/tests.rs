@@ -18,7 +18,7 @@ use super::LiveVariablesAnalysis;
 
 /**
  * Tests for {@link LiveVariablesAnalysis}. Test cases are snippets of a function and assertions are
- * made at the instruction labeled with {@code X}.
+ * made at the instruction labelled with {@code X}.
  */
 
 #[test]
@@ -712,11 +712,11 @@ fn get_flow_state_at_x(
         liveness,
         flow_state: None,
         predicate: |stmt| {
-            if let Stmt::Labeled(labeled) = stmt {
-                if program_data.get_name_text(labeled.label.name) == "X" {
-                    let body = match labeled.body.as_ref() {
+            if let Stmt::Labelled(labelled) = stmt {
+                if program_data.get_name_text(labelled.label.name) == "X" {
+                    let body = match labelled.body.as_ref() {
                         Stmt::Block(b) if b.stmts.len() == 1 => b.stmts.first().unwrap(),
-                        _ => labeled.body.as_ref(),
+                        _ => labelled.body.as_ref(),
                     };
                     let body = Node::from(body);
                     return liveness
@@ -753,7 +753,7 @@ impl<'a, 'ast, P> Visit<'ast> for FlowStateFinder<'a, 'ast, P>
 where
     P: Fn(&'ast Stmt) -> Option<&'a LinearFlowState>,
 {
-    // fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
+    // fn visit_labelled_stmt(&mut self, node: &'ast LabelledStmt) {
     //     if self.flow_state.is_none() {
     //         if &node.label.sym == "X" {
     //             let body = Node::from(node.body.as_ref());

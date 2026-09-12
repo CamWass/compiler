@@ -951,7 +951,7 @@ impl Visitor<'_> {
                 }
             }
 
-            Stmt::Labeled(LabeledStmt { body, .. }) => {
+            Stmt::Labelled(LabelledStmt { body, .. }) => {
                 self.collect_vars_declared_in_stmt(body);
             }
 
@@ -1273,7 +1273,7 @@ impl Visitor<'_> {
     }
 
     fn simplify_labelled_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
-        let labelled_stmt = unwrap_as!(stmt, Stmt::Labeled(s), s);
+        let labelled_stmt = unwrap_as!(stmt, Stmt::Labelled(s), s);
 
         if let Stmt::Block(block) = labelled_stmt.body.as_ref() {
             if block.stmts.is_empty() {
@@ -1296,7 +1296,7 @@ impl Visitor<'_> {
         }
 
         match body {
-            Stmt::Labeled(_) => {
+            Stmt::Labelled(_) => {
                 return self.simplify_labelled_stmt(body);
             }
             Stmt::Expr(expr) => {
@@ -1590,7 +1590,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 Stmt::Try(_) => Some(self.simplify_try_stmt(&mut stmts[i])),
                 Stmt::For(_) => Some(self.simplify_for_stmt(&mut stmts[i])),
                 Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(&mut stmts[i])),
-                Stmt::Labeled(_) => Some(self.simplify_labelled_stmt(&mut stmts[i])),
+                Stmt::Labelled(_) => Some(self.simplify_labelled_stmt(&mut stmts[i])),
                 _ => None,
             };
 
@@ -1696,7 +1696,7 @@ impl VisitMut<'_> for Visitor<'_> {
                     Stmt::Try(_) => Some(self.simplify_try_stmt(stmt)),
                     Stmt::For(_) => Some(self.simplify_for_stmt(stmt)),
                     Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(stmt)),
-                    Stmt::Labeled(_) => Some(self.simplify_labelled_stmt(stmt)),
+                    Stmt::Labelled(_) => Some(self.simplify_labelled_stmt(stmt)),
                     _ => None,
                 };
 
@@ -2131,7 +2131,7 @@ fn isUnconditionalBlockExit(block: &[Stmt]) -> bool {
         }
     }
 
-    // Other statements can be anything except for unlabeled "break". But for simplicity, don't go
+    // Other statements can be anything except for unlabelled "break". But for simplicity, don't go
     // into inner blocks and complex constructs - instead, allow only the simplest statements.
     for stmt in &block[..block.len() - 1] {
         match stmt {
@@ -2252,7 +2252,7 @@ fn contains_unlabelled_break(stmt: &Stmt) -> bool {
 
         Stmt::With(WithStmt { body, .. }) => body.stmts.iter().any(contains_unlabelled_break),
 
-        Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
+        Stmt::Labelled(LabelledStmt { body, .. }) => contains_unlabelled_break(body),
 
         Stmt::Empty(_)
         | Stmt::Debugger(_)
@@ -2300,7 +2300,7 @@ fn contains_unlabelled_break_or_continue(stmt: &Stmt) -> bool {
 
         Stmt::With(WithStmt { body, .. }) => body.stmts.iter().any(contains_unlabelled_break),
 
-        Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
+        Stmt::Labelled(LabelledStmt { body, .. }) => contains_unlabelled_break(body),
 
         Stmt::Empty(_)
         | Stmt::Debugger(_)
