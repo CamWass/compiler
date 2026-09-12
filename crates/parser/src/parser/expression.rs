@@ -850,9 +850,9 @@ impl Parser<'_> {
                     match spread_start {
                         Some(spread_start) => {
                             let span = Span::new(spread_start, self.input.cur_pos());
-                            MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
+                            MaybeParenExprOrSpread::Spread(SpreadElement {
                                 node_id: node_id!(self, span),
-                                expr,
+                                expr: expr.unwrap(),
                             })
                         }
                         None => MaybeParenExprOrSpread::Expr(expr),
@@ -875,23 +875,22 @@ impl Parser<'_> {
                         || self.peeked_is(tok!('='))
                     {
                         self.assert_and_bump(tok!('?'));
-                        if current_item_has_spread {
-                            self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
-                        }
                         match &arg {
-                            MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
-                                expr,
-                                ..
-                            })
-                            | MaybeParenExprOrSpread::Expr(expr)
-                                if matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_))) =>
-                                {}
-                            _ => {
-                                syntax_error!(
-                                    self,
-                                    get_span!(self, arg.node_id()),
-                                    SyntaxError::TsBindingPatCannotBeOptional
-                                )
+                            MaybeParenExprOrSpread::Expr(expr) => {
+                                if !matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_)))
+                                {
+                                    syntax_error!(
+                                        self,
+                                        get_span!(self, expr.node_id()),
+                                        SyntaxError::TsBindingPatCannotBeOptional
+                                    );
+                                }
+                            }
+                            MaybeParenExprOrSpread::Spread(spread_element) => {
+                                self.emit_err(
+                                    get_span!(self, spread_element.node_id),
+                                    SyntaxError::TS1047,
+                                );
                             }
                         }
                         true
@@ -949,16 +948,14 @@ impl Parser<'_> {
                 // }
 
                 let (expr, spread) = match arg {
-                    MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
-                        expr,
-                        node_id,
-                        ..
-                    }) => (expr, Some(get_span!(self, node_id))),
-                    MaybeParenExprOrSpread::Expr(expr) => (expr, None),
+                    MaybeParenExprOrSpread::Spread(SpreadElement { expr, node_id, .. }) => {
+                        (expr, Some(get_span!(self, node_id)))
+                    }
+                    MaybeParenExprOrSpread::Expr(expr) => (expr.unwrap(), None),
                 };
 
                 if let Some(span) = spread {
-                    let pat = self.reparse_expr_as_binding_pat_or_ident(*expr.unwrap());
+                    let pat = self.reparse_expr_as_binding_pat_or_ident(*expr);
 
                     if let Some(rest_span) = rest_span {
                         if self.syntax().early_errors() {
@@ -976,7 +973,7 @@ impl Parser<'_> {
 
                     items.push(MaybeParenPatOrExprOrSpread::BindingRestElement(rest));
                 } else {
-                    let mut pat = self.reparse_expr_as_binding_element(expr.unwrap());
+                    let mut pat = self.reparse_expr_as_binding_element(expr);
 
                     let new_type_ann = self.try_parse_ts_type_ann()?;
                     if new_type_ann.is_some() {
@@ -1013,10 +1010,10 @@ impl Parser<'_> {
             if first && self.eat(tok!("=>")) && {
                 debug_assert_eq!(items.len(), 1);
                 match &items[0] {
-                    MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement {
-                        expr, ..
-                    })
-                    | MaybeParenPatOrExprOrSpread::Expr(expr) => {
+                    MaybeParenPatOrExprOrSpread::Spread(SpreadElement { expr, .. }) => {
+                        matches!(expr.as_ref(), Expr::Ident(_))
+                    }
+                    MaybeParenPatOrExprOrSpread::Expr(expr) => {
                         matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_)))
                     }
                     MaybeParenPatOrExprOrSpread::BindingElement(BindingElement {
@@ -1208,9 +1205,9 @@ impl Parser<'_> {
                 .include_in_expr(true)
                 .parse_assignment_expr(assign_props)?;
             let span = Span::new(start, self.input.prev_span().hi);
-            Ok(MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
+            Ok(MaybeParenExprOrSpread::Spread(SpreadElement {
                 node_id: node_id!(self, span),
-                expr,
+                expr: expr.unwrap(),
             }))
         } else {
             self.parse_assignment_expr(assign_props)
@@ -1352,7 +1349,7 @@ impl Parser<'_> {
             .map(|item| -> PResult<_> {
                 match item {
                     MaybeParenPatOrExprOrSpread::Expr(e) => Ok(ExprOrSpread::Expr(e.unwrap())),
-                    MaybeParenPatOrExprOrSpread::Spread(e) => Ok(ExprOrSpread::Spread(e.unwrap())),
+                    MaybeParenPatOrExprOrSpread::Spread(e) => Ok(ExprOrSpread::Spread(e)),
                     MaybeParenPatOrExprOrSpread::BindingElement(p) => {
                         syntax_error!(self, get_span!(self, p.node_id()), SyntaxError::InvalidExpr)
                     }
@@ -1756,7 +1753,7 @@ pub(super) enum MaybeParenPatOrExprOrSpread {
     BindingElement(BindingElement),
     BindingRestElement(BindingRestElement),
     Expr(MaybeParen),
-    Spread(MaybeParenSpreadElement),
+    Spread(SpreadElement),
 }
 
 impl CloneNode for MaybeParenPatOrExprOrSpread {
@@ -1776,7 +1773,7 @@ impl CloneNode for MaybeParenPatOrExprOrSpread {
 
 enum MaybeParenExprOrSpread {
     Expr(MaybeParen),
-    Spread(MaybeParenSpreadElement),
+    Spread(SpreadElement),
 }
 
 impl MaybeParenExprOrSpread {
@@ -1785,41 +1782,7 @@ impl MaybeParenExprOrSpread {
     fn unwrap(self) -> ExprOrSpread {
         match self {
             MaybeParenExprOrSpread::Expr(n) => ExprOrSpread::Expr(n.unwrap()),
-            MaybeParenExprOrSpread::Spread(n) => ExprOrSpread::Spread(n.unwrap()),
-        }
-    }
-}
-
-impl GetNodeId for MaybeParenExprOrSpread {
-    fn node_id(&self) -> NodeId {
-        match self {
-            MaybeParenExprOrSpread::Expr(n) => n.node_id(),
-            MaybeParenExprOrSpread::Spread(n) => n.expr.node_id(),
-        }
-    }
-}
-
-pub(super) struct MaybeParenSpreadElement {
-    pub node_id: NodeId,
-    pub expr: MaybeParen,
-}
-
-impl MaybeParenSpreadElement {
-    // TODO: don't call this unwrap - it gives the impression that this will
-    // panic.
-    fn unwrap(self) -> SpreadElement {
-        SpreadElement {
-            node_id: self.node_id,
-            expr: self.expr.unwrap(),
-        }
-    }
-}
-
-impl CloneNode for MaybeParenSpreadElement {
-    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
-        Self {
-            node_id: program_data.new_id_from(self.node_id),
-            expr: self.expr.clone_node(program_data),
+            MaybeParenExprOrSpread::Spread(n) => ExprOrSpread::Spread(n),
         }
     }
 }

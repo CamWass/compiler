@@ -1,6 +1,5 @@
 //! 13.3.3 Destructuring Binding Patterns
 use super::{expression::MaybeParenPatOrExprOrSpread, *};
-use expression::MaybeParenSpreadElement;
 use util::AssignProps;
 
 impl Parser<'_> {
@@ -1029,9 +1028,7 @@ impl Parser<'_> {
 
         for expr in exprs.drain(..len - 1) {
             match expr {
-                MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement {
-                    node_id, ..
-                })
+                MaybeParenPatOrExprOrSpread::Spread(SpreadElement { node_id, .. })
                 | MaybeParenPatOrExprOrSpread::BindingRestElement(BindingRestElement {
                     node_id,
                     ..
@@ -1054,8 +1051,8 @@ impl Parser<'_> {
         let expr = exprs.into_iter().next().unwrap();
         match expr {
             // Rest
-            MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement { expr, .. }) => {
-                let pat = self.reparse_expr_as_binding_pat_or_ident(*expr.unwrap());
+            MaybeParenPatOrExprOrSpread::Spread(SpreadElement { expr, .. }) => {
+                let pat = self.reparse_expr_as_binding_pat_or_ident(*expr);
                 rest = Some(BindingRestElement {
                     node_id: node_id_from!(self, pat.node_id()),
                     arg: Box::new(pat),
