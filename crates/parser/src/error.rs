@@ -146,6 +146,9 @@ pub(super) enum SyntaxError {
 
     NoCatchOrFinally,
 
+    BindingEvalInStrictMode,
+    BindingArgumentsInStrictMode,
+
     TS1003,
     TS1005,
     TS1009,
@@ -164,7 +167,6 @@ pub(super) enum SyntaxError {
     TS1092,
     TS1096,
     TS1098,
-    TS1100,
     TS1102,
     TS1105,
     TS1107,
@@ -394,6 +396,13 @@ impl SyntaxError {
 
             SyntaxError::NoCatchOrFinally => "Missing catch or finally clause".into(),
 
+            SyntaxError::BindingEvalInStrictMode => {
+                "'eval' cannot be used as a variable name or assignment target in strict mode".into()
+            }
+            SyntaxError::BindingArgumentsInStrictMode => {
+                "'arguments' cannot be used as a variable name or assignment target in strict mode".into()
+            }
+
             SyntaxError::TS1056 => {
                 "jsc.target should be es5 or upper to use getter / setter".into()
             }
@@ -445,7 +454,6 @@ impl SyntaxError {
             }
             SyntaxError::TS1096 => "An index signature must have exactly one parameter".into(),
             SyntaxError::TS1098 => "Type parameter list cannot be empty".into(),
-            SyntaxError::TS1100 => "Invalid use of 'arguments' in strict mode".into(),
             SyntaxError::TS1102 => {
                 "'delete' cannot be called on an identifier in strict mode".into()
             }

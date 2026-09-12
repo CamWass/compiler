@@ -1003,13 +1003,18 @@ impl Parser<'_> {
     }
 
     fn reparse_ident_as_binding_ident(&mut self, ident: Ident) -> BindingIdent {
-        let is_eval_or_arguments =
-            ident.name == id_for_built_in!("eval") || ident.name == id_for_built_in!("arguments");
+        if ident.name == id_for_built_in!("eval") {
+            self.emit_strict_mode_err(
+                get_span!(self, ident.node_id),
+                SyntaxError::BindingEvalInStrictMode,
+            );
+        }
 
-        if is_eval_or_arguments {
-            // TODO: this error message only mentions 'arguments'.
-            // We should have a different message for eval.
-            self.emit_strict_mode_err(get_span!(self, ident.node_id), SyntaxError::TS1100);
+        if ident.name == id_for_built_in!("arguments") {
+            self.emit_strict_mode_err(
+                get_span!(self, ident.node_id),
+                SyntaxError::BindingArgumentsInStrictMode,
+            );
         }
 
         BindingIdent::from_ident(ident)
