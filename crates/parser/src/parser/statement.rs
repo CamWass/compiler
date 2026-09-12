@@ -928,9 +928,7 @@ impl Parser<'_> {
         let tail = match (handler, finalizer) {
             (None, None) => {
                 let catch_span = Span::new(catch_start, catch_start);
-                // self.raise(node.start, Errors.NoCatchOrFinally);
-                // TODO: is babel's error message more descriptive than this?
-                self.emit_err(catch_span, SyntaxError::TS1005);
+                self.emit_err(catch_span, SyntaxError::NoCatchOrFinally);
 
                 TryStmtTail::Catch(CatchClause {
                     node_id: program_data!(self).new_id(catch_span),
