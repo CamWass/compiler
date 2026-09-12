@@ -1337,11 +1337,13 @@ impl Parser<'_> {
                 }
             }
             return Ok(Box::new(Expr::Arrow(arrow_expr)).into());
-        } else {
-            // This is an parenthesised expression; disallow assign properties.
-            for prop in paren_assign_props {
-                self.emit_err(prop, SyntaxError::AssignProperty);
-            }
+        }
+
+        // This is an parenthesised expression.
+
+        // Assign properties are not valid in expressions.
+        for prop in paren_assign_props {
+            self.emit_err(prop, SyntaxError::AssignProperty);
         }
 
         let expr_or_spreads = paren_items
@@ -1371,8 +1373,6 @@ impl Parser<'_> {
             .into());
         }
 
-        // It was not head of arrow function.
-
         if expr_or_spreads.is_empty() {
             syntax_error!(
                 self,
@@ -1380,8 +1380,6 @@ impl Parser<'_> {
                 SyntaxError::EmptyParenExpr
             );
         }
-
-        // TODO: Verify that invalid expression like {a = 1} does not exists.
 
         // ParenthesizedExpression cannot contain spread.
         if expr_or_spreads.len() == 1 {
