@@ -87,15 +87,6 @@ fn add_test<F: FnOnce() -> Result<(), String> + Send + 'static>(
 
 fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
     const IGNORED_ERROR_TESTS: &[&str] = &[
-        // TODO: These tests involve "Binding member expression" and look like
-        // they are right to fail:
-        "3b6f737a4ac948a8.js",
-        "829d9261aa6cd22c.js",
-        "b03ee881dce1a367.js",
-        "f0f498d6ae70038f.js",
-        // TODO: This test involves "Binding member expression" and looks like
-        // it is right to fail, but needs to be checked for stack overflow:
-        "cb92787da5075fd1.js",
         // Wrong tests involving decimal escapes (such as "\8"); they should be
         // pass tests.
         "0d5e450f1da8a92a.js",
@@ -105,18 +96,6 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         // TODO: This test involves the 'let' keyword on the LHS of a for-of
         // loop, and looks like it is right to fail:
         "ef2d369cccc5386c.js",
-        // TODO: Temporarily ignored. Further information:
-        // Source: var _𖫵 = 11;
-        // We currently produce lexer errors, which results in incorrect parsing/errors.
-        // Babel's output:
-        // "Unexpected character"
-        // Firefox's output:
-        // "SyntaxError: illegal character U+16AF5"
-        // Chrome's output:
-        // "SyntaxError: Invalid or unexpected token"
-        // SWC's output (which appears unhelpful/incorrect):
-        // "error: Expected a semicolon"
-        "2fa321f0374c7017.js",
         // TODO: Temporarily ignored. Further information:
         // These tests appear be valid javascript and should be pass tests
         // rather than fail ones. Try running them in browser consoles.
