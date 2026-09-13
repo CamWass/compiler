@@ -336,10 +336,6 @@ impl Parser<'_> {
 
         self.assert_and_bump(tok!("await"));
 
-        if self.is(tok!('*')) {
-            syntax_error!(self, SyntaxError::AwaitStar);
-        }
-
         if (self.is(tok!(')')) || self.is(tok!(']'))) && !self.ctx().in_async() {
             return Ok(Box::new(Expr::Ident(
                 self.new_ident(id_for_built_in!("await"), self.span(start)),

@@ -93,7 +93,6 @@ pub(super) enum SyntaxError {
         expr: Span,
     },
 
-    AwaitStar,
     ReservedWordInObjShorthandOrPat,
 
     NullishCoalescingWithLogicalOp,
@@ -302,10 +301,6 @@ impl SyntaxError {
                 format!("Expected {expected}, got {got}").into()
             }
             SyntaxError::ExpectedSemiForExprStmt { .. } => "Expected ';', '}' or <eof>".into(),
-
-            SyntaxError::AwaitStar => "await* has been removed from the async functions proposal. \
-                                       Use Promise.all() instead."
-                .into(),
 
             SyntaxError::ReservedWordInObjShorthandOrPat => {
                 "Cannot use a reserved word as a shorthand property".into()
