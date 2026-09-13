@@ -198,7 +198,9 @@ impl Parser<'_> {
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
                 }
 
-                let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.into_expr();
+                let right = self
+                    .parse_assignment_expr(&mut AssignProps::Emit)?
+                    .into_expr();
                 if self.ctx().in_declare() {
                     self.emit_err(self.span(start), SyntaxError::TS2371);
                 }
@@ -340,7 +342,9 @@ impl Parser<'_> {
                 let pat = self.parse_binding_pat_or_ident()?;
 
                 if self.eat(tok!('=')) {
-                    let _right = self.parse_assignment_expr(&mut AssignProps::Emit)?.into_expr();
+                    let _right = self
+                        .parse_assignment_expr(&mut AssignProps::Emit)?
+                        .into_expr();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                 }
 
