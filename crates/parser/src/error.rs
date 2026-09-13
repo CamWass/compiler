@@ -350,7 +350,7 @@ impl SyntaxError {
                 "A required element cannot follow an optional element.".into()
             }
             SyntaxError::TsInvalidParamPropPat => {
-                "Typescript parameter property must be identifer or assignment pattern".into()
+                "Typescript parameter property must be identifier or assignment pattern".into()
             }
             SyntaxError::SpaceBetweenHashAndIdent => {
                 "Unexpected space between # and identifier".into()
