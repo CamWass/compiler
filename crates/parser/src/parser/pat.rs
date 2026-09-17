@@ -409,8 +409,9 @@ impl Parser<'_> {
         let parenthesised = self.parenthesised_exprs.contains(&expr.node_id());
 
         if parenthesised {
-            // TODO: better error.
-            self.emit_err(get_span!(self, expr.node_id()), SyntaxError::InvalidPat);
+            let expr_span = get_span!(self, expr.node_id());
+            let paren_span = Span::new(expr_span.lo - BytePos(1), expr_span.hi + BytePos(1));
+            self.emit_err(paren_span, SyntaxError::ParenthesisedAssignTarget);
 
             return self.create_invalid_assign_target();
         }

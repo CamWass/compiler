@@ -148,6 +148,8 @@ pub(super) enum SyntaxError {
     BindingEvalInStrictMode,
     BindingArgumentsInStrictMode,
 
+    ParenthesisedAssignTarget,
+
     TS1003,
     TS1005,
     TS1009,
@@ -396,6 +398,10 @@ impl SyntaxError {
             }
             SyntaxError::BindingArgumentsInStrictMode => {
                 "'arguments' cannot be used as a variable name or assignment target in strict mode".into()
+            }
+
+            SyntaxError::ParenthesisedAssignTarget => {
+                "Assignment target cannot be parenthesised".into()
             }
 
             SyntaxError::TS1056 => {
