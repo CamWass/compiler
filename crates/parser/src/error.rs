@@ -147,8 +147,8 @@ pub(super) enum SyntaxError {
 
     BindingEvalInStrictMode,
     BindingArgumentsInStrictMode,
-
     ParenthesisedAssignTarget,
+    NonIdentRestPropArg,
 
     TS1003,
     TS1005,
@@ -321,7 +321,7 @@ impl SyntaxError {
             SyntaxError::EmptyParenExpr => "Parenthesized expression cannot be empty".into(),
             SyntaxError::InvalidPat => "Not a pattern".into(),
             SyntaxError::InvalidExpr => "Not an expression".into(),
-            SyntaxError::ExpectedIdent => "Expected ident".into(),
+            SyntaxError::ExpectedIdent => "Expected an identifier".into(),
             SyntaxError::DuplicateLabel(label) => {
                 format!("Label {label} is already declared").into()
             }
@@ -402,6 +402,10 @@ impl SyntaxError {
 
             SyntaxError::ParenthesisedAssignTarget => {
                 "Assignment target cannot be parenthesised".into()
+            }
+
+            SyntaxError::NonIdentRestPropArg => {
+                "The argument of a binding rest property must be an identifier".into()
             }
 
             SyntaxError::TS1056 => {

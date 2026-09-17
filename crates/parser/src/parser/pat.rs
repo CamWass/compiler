@@ -886,7 +886,7 @@ impl Parser<'_> {
                     Prop::Spread(SpreadAssignment { expr, node_id, .. }) => {
                         rest = Some(BindingRestProperty {
                             node_id: node_id_from!(self, node_id),
-                            arg: Box::new(self.reparse_expr_as_binding_ident(*expr)),
+                            arg: Box::new(self.reparse_expr_as_binding_rest_prop_arg(*expr)),
                         });
 
                         None
@@ -998,11 +998,14 @@ impl Parser<'_> {
         }
     }
 
-    fn reparse_expr_as_binding_ident(&mut self, expr: Expr) -> BindingIdent {
+    fn reparse_expr_as_binding_rest_prop_arg(&mut self, expr: Expr) -> BindingIdent {
         if let Expr::Ident(ident) = expr {
             self.reparse_ident_as_binding_ident(ident)
         } else {
-            self.emit_err(get_span!(self, expr.node_id()), SyntaxError::InvalidPat);
+            self.emit_err(
+                get_span!(self, expr.node_id()),
+                SyntaxError::NonIdentRestPropArg,
+            );
             self.create_invalid_binding_ident()
         }
     }
