@@ -612,9 +612,7 @@ impl Parser<'_> {
                 .parse_expr(&mut AssignProps::Emit)?
                 .into_expr();
             expect!(self, ']');
-            let obj_span_lo = get_span!(self, obj.node_id()).lo();
-            let span = Span::new(obj_span_lo, self.input.last_pos());
-            debug_assert_eq!(obj_span_lo, span.lo());
+            let span = Span::new(start, self.input.last_pos());
 
             let base = MemberExpr {
                 node_id: node_id!(self, span),
@@ -664,8 +662,8 @@ impl Parser<'_> {
                 PrivateNameOrIdentifier::PrivateName(p) => Expr::PrivateName(p),
                 PrivateNameOrIdentifier::Identifier(i) => Expr::Ident(i),
             })?);
-            let span = self.span(get_span!(self, obj.node_id()).lo());
-            debug_assert_eq!(get_span!(self, obj.node_id()).lo(), span.lo());
+            let span = self.span(start);
+            debug_assert_eq!(start, span.lo());
             debug_assert_eq!(get_span!(self, prop.node_id()).hi(), span.hi());
 
             let base = MemberExpr {
