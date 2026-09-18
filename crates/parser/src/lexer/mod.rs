@@ -1222,7 +1222,7 @@ enum EscapeSequenceLength {
 
 bitflags! {
     #[derive(Clone, Copy)]
-    pub struct RegexFlags: u8 {
+    struct RegexFlags: u8 {
         const D = 1 << 0;
         const G = 1 << 1;
         const I = 1 << 2;
