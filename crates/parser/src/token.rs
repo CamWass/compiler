@@ -709,7 +709,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenAndSpan {
     pub token: Token,
     /// Had a line break before this token?

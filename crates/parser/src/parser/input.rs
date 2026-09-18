@@ -105,15 +105,14 @@ impl<'d> Buffer<'d> {
 
     /// Returns current token.
     pub fn bump(&mut self) -> Token {
-        let next = if self.next.is_none() {
-            self.iter.next_token()
-        } else {
-            let Some(next) = self.next.take() else {
-                unreachable!();
-            };
-            next
+        let next = match self.next.take() {
+            Some(next) => next,
+            None => self.iter.next_token(),
         };
-        let prev = std::mem::replace(&mut self.cur, next);
+
+        let prev = self.cur;
+        self.cur = next;
+
         self.prev_span = prev.span;
         prev.token
     }
