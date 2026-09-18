@@ -658,45 +658,45 @@ impl<'src> Lexer<'src> {
         let start = self.cur_pos();
         self.advance(1); // ' or "
 
-        self.with_buf(|lexer, out| {
-            while let Some(ch) = {
-                // Optimization
-                {
-                    let s = lexer.uncons_while_byte(|b| {
-                        b != quote
-                            && b != b'\\'
-                            && b != char_bytes::LINE_FEED
-                            && b != char_bytes::CARRIAGE_RETURN
-                    });
-                    out.push_str(s);
+        let mut out = String::new();
+
+        while let Some(ch) = {
+            // Optimization
+            {
+                let s = self.uncons_while_byte(|b| {
+                    b != quote
+                        && b != b'\\'
+                        && b != char_bytes::LINE_FEED
+                        && b != char_bytes::CARRIAGE_RETURN
+                });
+                out.push_str(s);
+            }
+            self.cur_byte()
+        } {
+            match ch {
+                ch if ch == quote => {
+                    self.advance(1); // ' or "
+                    return Ok(self.make_str_token(Box::new(out)));
                 }
-                lexer.cur_byte()
-            } {
-                match ch {
-                    ch if ch == quote => {
-                        lexer.advance(1); // ' or "
-                        return Ok(lexer.make_str_token(Box::new(String::from(out.as_str()))));
+                b'\\' => {
+                    if let Some(s) = self.read_escaped_char(false)? {
+                        out.push(s);
                     }
-                    b'\\' => {
-                        if let Some(s) = lexer.read_escaped_char(false)? {
-                            out.push(s);
-                        }
-                    }
-                    char_bytes::LINE_FEED | char_bytes::CARRIAGE_RETURN => {
-                        // String literals cannot span multiple lines.
-                        // LINE_SEPARATOR and PARAGRAPH_SEPARATOR are permitted.
-                        let pos = lexer.cur_pos();
-                        lexer.error(pos, SyntaxError::UnterminatedStrLit)?;
-                    }
-                    _ => {
-                        out.push(lexer.next_char());
-                    }
+                }
+                char_bytes::LINE_FEED | char_bytes::CARRIAGE_RETURN => {
+                    // String literals cannot span multiple lines.
+                    // LINE_SEPARATOR and PARAGRAPH_SEPARATOR are permitted.
+                    let pos = self.cur_pos();
+                    self.error(pos, SyntaxError::UnterminatedStrLit)?;
+                }
+                _ => {
+                    out.push(self.next_char());
                 }
             }
+        }
 
-            // Reached end of input without seeing closing quote.
-            lexer.error(start, SyntaxError::UnterminatedStrLit)?
-        })
+        // Reached end of input without seeing closing quote.
+        self.error(start, SyntaxError::UnterminatedStrLit)
     }
 
     // Used to read escaped characters.
