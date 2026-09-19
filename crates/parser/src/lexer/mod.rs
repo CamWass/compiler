@@ -901,8 +901,8 @@ impl<'src> Lexer<'src> {
 
         let (word, has_esc) = self.read_word()?;
 
-        let known_ident = match word.as_bytes().first().unwrap() {
-            b'a' => match word.as_ref() {
+        let known_ident = match word.as_bytes().first() {
+            Some(b'a') => match word.as_ref() {
                 "await" => Some(Token::Await),
                 "async" => Some(Token::Async),
                 "as" => Some(Token::As),
@@ -912,13 +912,13 @@ impl<'src> Lexer<'src> {
                 "assert" => Some(Token::Assert),
                 _ => None,
             },
-            b'b' => match word.as_ref() {
+            Some(b'b') => match word.as_ref() {
                 "break" => Some(Token::Break),
                 "boolean" => Some(Token::Boolean),
                 "bigint" => Some(Token::Bigint),
                 _ => None,
             },
-            b'c' => match word.as_ref() {
+            Some(b'c') => match word.as_ref() {
                 "case" => Some(Token::Case),
                 "catch" => Some(Token::Catch),
                 "continue" => Some(Token::Continue),
@@ -926,7 +926,7 @@ impl<'src> Lexer<'src> {
                 "class" => Some(Token::Class),
                 _ => None,
             },
-            b'd' => match word.as_ref() {
+            Some(b'd') => match word.as_ref() {
                 "debugger" => Some(Token::Debugger),
                 "default" => Some(Token::Default),
                 "do" => Some(Token::Do),
@@ -934,14 +934,14 @@ impl<'src> Lexer<'src> {
                 "declare" => Some(Token::Declare),
                 _ => None,
             },
-            b'e' => match word.as_ref() {
+            Some(b'e') => match word.as_ref() {
                 "else" => Some(Token::Else),
                 "extends" => Some(Token::Extends),
                 "export" => Some(Token::Export),
                 "enum" => Some(Token::Enum),
                 _ => None,
             },
-            b'f' => match word.as_ref() {
+            Some(b'f') => match word.as_ref() {
                 "false" => Some(Token::False),
                 "finally" => Some(Token::Finally),
                 "for" => Some(Token::For),
@@ -949,12 +949,12 @@ impl<'src> Lexer<'src> {
                 "function" => Some(Token::Function),
                 _ => None,
             },
-            b'g' => match word.as_ref() {
+            Some(b'g') => match word.as_ref() {
                 "get" => Some(Token::Get),
                 "global" => Some(Token::Global),
                 _ => None,
             },
-            b'i' => match word.as_ref() {
+            Some(b'i') => match word.as_ref() {
                 "if" => Some(Token::If),
                 "implements" => Some(Token::Implements),
                 "import" => Some(Token::Import),
@@ -966,44 +966,44 @@ impl<'src> Lexer<'src> {
                 "is" => Some(Token::Is),
                 _ => None,
             },
-            b'k' => match word.as_ref() {
+            Some(b'k') => match word.as_ref() {
                 "keyof" => Some(Token::Keyof),
                 _ => None,
             },
-            b'l' => match word.as_ref() {
+            Some(b'l') => match word.as_ref() {
                 "let" => Some(Token::Let),
                 _ => None,
             },
-            b'm' => match word.as_ref() {
+            Some(b'm') => match word.as_ref() {
                 "meta" => Some(Token::Meta),
                 _ => None,
             },
-            b'n' => match word.as_ref() {
+            Some(b'n') => match word.as_ref() {
                 "never" => Some(Token::Never),
                 "new" => Some(Token::New),
                 "null" => Some(Token::Null),
                 "number" => Some(Token::Number),
                 _ => None,
             },
-            b'o' => match word.as_ref() {
+            Some(b'o') => match word.as_ref() {
                 "object" => Some(Token::Object),
                 "of" => Some(Token::Of),
                 "override" => Some(Token::Override),
                 _ => None,
             },
-            b'p' => match word.as_ref() {
+            Some(b'p') => match word.as_ref() {
                 "package" => Some(Token::Package),
                 "private" => Some(Token::Private),
                 "protected" => Some(Token::Protected),
                 "public" => Some(Token::Public),
                 _ => None,
             },
-            b'r' => match word.as_ref() {
+            Some(b'r') => match word.as_ref() {
                 "readonly" => Some(Token::Readonly),
                 "return" => Some(Token::Return),
                 _ => None,
             },
-            b's' => match word.as_ref() {
+            Some(b's') => match word.as_ref() {
                 "set" => Some(Token::Set),
                 "static" => Some(Token::Static),
                 "string" => Some(Token::String),
@@ -1012,7 +1012,7 @@ impl<'src> Lexer<'src> {
                 "symbol" => Some(Token::Symbol),
                 _ => None,
             },
-            b't' => match word.as_ref() {
+            Some(b't') => match word.as_ref() {
                 "target" => Some(Token::Target),
                 "this" => Some(Token::This),
                 "throw" => Some(Token::Throw),
@@ -1022,23 +1022,23 @@ impl<'src> Lexer<'src> {
                 "typeof" => Some(Token::TypeOf),
                 _ => None,
             },
-            b'u' => match word.as_ref() {
+            Some(b'u') => match word.as_ref() {
                 "undefined" => Some(Token::Undefined),
                 "unique" => Some(Token::Unique),
                 "unknown" => Some(Token::Unknown),
                 _ => None,
             },
-            b'v' => match word.as_ref() {
+            Some(b'v') => match word.as_ref() {
                 "var" => Some(Token::Var),
                 "void" => Some(Token::Void),
                 _ => None,
             },
-            b'w' => match word.as_ref() {
+            Some(b'w') => match word.as_ref() {
                 "while" => Some(Token::While),
                 "with" => Some(Token::With),
                 _ => None,
             },
-            b'y' => match word.as_ref() {
+            Some(b'y') => match word.as_ref() {
                 "yield" => Some(Token::Yield),
                 _ => None,
             },
