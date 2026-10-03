@@ -2,57 +2,43 @@ const source = await fetch(new URL("out.js", import.meta.url)).then((r) =>
   r.text(),
 );
 
+function mk_config(prettyPrint, passConfig) {
+  const config = {
+    pretty_print: prettyPrint,
+    passes: {
+      coalesce_variable_names: false,
+      rename_vars: false,
+      rename_labels: false,
+      optimize_properties: false,
+      fuse_stmts: false,
+      inline_functions: false,
+      convert_to_dot_properties: false,
+      dead_assignment_elimination: false,
+      optimise_equality: false,
+      remove_dead_code: false,
+      collapse_variable_declarations: false,
+      substitute_alternate_syntax: false,
+      ...(passConfig ?? {}),
+    },
+    ecmascript: {
+      dynamicImport: true,
+      importMeta: true,
+      topLevelAwait: true,
+    },
+  };
+
+  return JSON.stringify(config, undefined, 2);
+}
+
 export const INPUTS = {
   blank: {
     label: "Empty",
-    config: `{
-  "pretty_print": true,
-  "passes": {
-    "coalesce_variable_names": false,
-    "rename_vars": false,
-    "rename_labels": false,
-    "optimize_properties": false,
-    "fuse_stmts": false,
-    "inline_functions": false,
-    "convert_to_dot_properties": false,
-    "dead_assignment_elimination": false,
-    "optimise_equality": false,
-    "remove_dead_code": false,
-    "collapse_variable_declarations": false,
-    "substitute_alternate_syntax": false
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
+    config: mk_config(true),
     input: "",
   },
   cfg: {
     label: "Control flow",
-    config: `{
-  "pretty_print": true,
-  "passes": {
-    "coalesce_variable_names": false,
-    "rename_vars": false,
-    "rename_labels": false,
-    "optimize_properties": false,
-    "fuse_stmts": false,
-    "inline_functions": false,
-    "convert_to_dot_properties": false,
-    "dead_assignment_elimination": false,
-    "optimise_equality": false,
-    "remove_dead_code": false,
-    "collapse_variable_declarations": false,
-    "substitute_alternate_syntax": false
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
+    config: mk_config(true),
     input: `try {
     for (let i = 0; i < array.length; i++) {
         func1();
@@ -72,28 +58,9 @@ export const INPUTS = {
   },
   properties: {
     label: "Property optimisation",
-    config: `{
-  "pretty_print": true,
-  "passes": {
-    "coalesce_variable_names": false,
-    "rename_vars": false,
-    "rename_labels": false,
-    "optimize_properties": true,
-    "fuse_stmts": false,
-    "inline_functions": false,
-    "convert_to_dot_properties": false,
-    "dead_assignment_elimination": false,
-    "optimise_equality": false,
-    "remove_dead_code": false,
-    "collapse_variable_declarations": false,
-    "substitute_alternate_syntax": false
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
+    config: mk_config(true, {
+      optimize_properties: true,
+    }),
     input: `function addInner(a) {
     a.inner = { zCommon: 1, prop3: 3 };
     return a;
@@ -127,28 +94,18 @@ result.prop3;
   },
   website: {
     label: "This website's source code",
-    config: `{
-  "pretty_print": false,
-  "passes": {
-    "coalesce_variable_names": true,
-    "rename_vars": true,
-    "rename_labels": true,
-    "optimize_properties": false,
-    "fuse_stmts": true,
-    "inline_functions": false,
-    "convert_to_dot_properties": true,
-    "dead_assignment_elimination": true,
-    "optimise_equality": true,
-    "remove_dead_code": true,
-    "collapse_variable_declarations": true,
-    "substitute_alternate_syntax": true
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
+    config: mk_config(false, {
+      coalesce_variable_names: true,
+      rename_vars: true,
+      rename_labels: true,
+      fuse_stmts: true,
+      convert_to_dot_properties: true,
+      dead_assignment_elimination: true,
+      optimise_equality: true,
+      remove_dead_code: true,
+      collapse_variable_declarations: true,
+      substitute_alternate_syntax: true,
+    }),
     input: source,
   },
 };
