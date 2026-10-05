@@ -18,6 +18,7 @@ function mk_config(prettyPrint, passConfig) {
       remove_dead_code: false,
       collapse_variable_declarations: false,
       substitute_alternate_syntax: false,
+      fold_constants: false,
       ...(passConfig ?? {}),
     },
     ecmascript: {
@@ -105,6 +106,7 @@ result.prop3;
       remove_dead_code: true,
       collapse_variable_declarations: true,
       substitute_alternate_syntax: true,
+      fold_constants: true,
     }),
     input: source,
   },

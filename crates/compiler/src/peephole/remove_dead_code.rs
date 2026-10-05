@@ -2859,7 +2859,7 @@ mod tests {
         test_transform("switch(a){default: break; case 1:break;}", "");
         test_transform(
             "switch(a){default: var b; break; case 1: var c; break;}",
-            "var b; var c;",
+            "var c; var b;",
         );
         test_transform("var x=1; switch(x) { case 1: var y; }", "var y; var x=1;");
 

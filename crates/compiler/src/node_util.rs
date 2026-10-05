@@ -1123,3 +1123,90 @@ pub fn new_void_zero(
         }))),
     })
 }
+
+/// Returns `true` if the node is an `Object.defineProperties` call with exactly
+// two, non-spread, arguments.
+pub fn isObjectDefinePropertiesDefinition(expr: &CallExpr) -> bool {
+    // We intentionally don't check optional Object.defineProperties?.() because
+    // we expect it to be defined or polyfill-ed.
+
+    if !matches!(
+        expr.args.as_slice(),
+        [ExprOrSpread::Expr(_), ExprOrSpread::Expr(_)]
+    ) {
+        return false;
+    }
+
+    let ExprOrSuper::Expr(callee) = &expr.callee else {
+        return false;
+    };
+
+    let Expr::Member(callee) = callee.as_ref() else {
+        return false;
+    };
+
+    if callee.computed {
+        return false;
+    }
+
+    let ExprOrSuper::Expr(obj) = &callee.obj else {
+        return false;
+    };
+
+    return matches!(
+        obj.as_ref(),
+        Expr::Ident(Ident {
+            name: id_for_built_in!("Object"),
+            ..
+        })
+    ) && matches!(
+        callee.prop.as_ref(),
+        Expr::Ident(Ident {
+            name: id_for_built_in!("defineProperties"),
+            ..
+        })
+    );
+}
+
+/// Returns an appropriate AST node for the numeric value.
+pub fn numberNode(
+    value: f64,
+    src_node_id: Option<NodeId>,
+    program_data: &mut TransformerProgramData,
+) -> Expr {
+    let mut result;
+
+    let src_span = src_node_id
+        .map(|id| program_data.get_span(id))
+        .unwrap_or(DUMMY_SP);
+    let new_node_id = program_data.new_id(src_span);
+
+    if value.is_nan() {
+        result = Expr::Ident(Ident {
+            node_id: new_node_id,
+            name: id_for_built_in!("NaN"),
+        });
+    } else {
+        if value.is_infinite() {
+            result = Expr::Ident(Ident {
+                node_id: new_node_id,
+                name: id_for_built_in!("Infinity"),
+            });
+        } else {
+            result = Expr::Lit(Lit::Num(Number {
+                node_id: new_node_id,
+                value: value.abs(),
+            }));
+        }
+
+        if value.is_sign_negative() {
+            result = Expr::Unary(UnaryExpr {
+                node_id: new_node_id,
+                op: UnaryOp::Minus,
+                arg: Box::new(result),
+            });
+        }
+    }
+
+    result
+}

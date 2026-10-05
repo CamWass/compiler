@@ -193,6 +193,7 @@ make_built_ins!(
     "cos",
     "cosh",
     "Date",
+    "defineProperties",
     "dotAll",
     "endsWith",
     "Error",

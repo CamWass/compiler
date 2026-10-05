@@ -62,6 +62,8 @@ pub struct PassConfig {
     pub collapse_variable_declarations: bool,
     #[serde(default)]
     pub substitute_alternate_syntax: bool,
+    #[serde(default)]
+    pub fold_constants: bool,
 }
 
 pub struct Compiler;
@@ -222,7 +224,11 @@ fn late_peephole_optimisations(
     }
 
     //         new PeepholeReplaceKnownMethods(late, useTypesForOptimization),
-    //         new PeepholeFoldConstants(late, useTypesForOptimization),
+
+    if passes.fold_constants {
+        peephole::fold_constants::process(ast, program_data, true);
+    }
+
     //   })
 }
 
