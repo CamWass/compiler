@@ -1179,29 +1179,28 @@ pub fn numberNode(
     let src_span = src_node_id
         .map(|id| program_data.get_span(id))
         .unwrap_or(DUMMY_SP);
-    let new_node_id = program_data.new_id(src_span);
 
     if value.is_nan() {
         result = Expr::Ident(Ident {
-            node_id: new_node_id,
+            node_id: program_data.new_id(src_span),
             name: id_for_built_in!("NaN"),
         });
     } else {
         if value.is_infinite() {
             result = Expr::Ident(Ident {
-                node_id: new_node_id,
+                node_id: program_data.new_id(src_span),
                 name: id_for_built_in!("Infinity"),
             });
         } else {
             result = Expr::Lit(Lit::Num(Number {
-                node_id: new_node_id,
+                node_id: program_data.new_id(src_span),
                 value: value.abs(),
             }));
         }
 
         if value.is_sign_negative() {
             result = Expr::Unary(UnaryExpr {
-                node_id: new_node_id,
+                node_id: program_data.new_id(src_span),
                 op: UnaryOp::Minus,
                 arg: Box::new(result),
             });
