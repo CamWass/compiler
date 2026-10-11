@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ast::*;
-use big_int::BigIntValue;
+use big_int::{BigIntSign, BigIntValue};
 use bitflags::bitflags;
 use common::DUMMY_SP;
 
@@ -20,7 +20,7 @@ pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
             Lit::Bool(bool) => Some(bool.value),
             Lit::Null(_) => Some(false),
             Lit::Num(number) => Some(number.value != 0.0 && !number.value.is_nan()),
-            Lit::BigInt(big_int) => Some(big_int.value.is_zero()),
+            Lit::BigInt(big_int) => Some(!big_int.value.is_zero()),
             Lit::Regex(_) => Some(true),
         },
         Expr::Array(_) | Expr::Object(_) | Expr::Class(_) | Expr::Fn(_) => Some(true),
@@ -1208,4 +1208,31 @@ pub fn numberNode(
     }
 
     result
+}
+
+pub fn bigintNode(
+    val: BigIntValue,
+    src_node_id: Option<NodeId>,
+    program_data: &mut TransformerProgramData,
+) -> Expr {
+    let src_span = src_node_id
+        .map(|id| program_data.get_span(id))
+        .unwrap_or(DUMMY_SP);
+
+    let is_negative = val.sign() == BigIntSign::Minus;
+
+    let unsigned = Expr::Lit(Lit::BigInt(BigInt {
+        node_id: program_data.new_id(src_span),
+        value: Box::new(val.into_abs()),
+    }));
+
+    if is_negative {
+        Expr::Unary(UnaryExpr {
+            node_id: program_data.new_id(src_span),
+            op: UnaryOp::Minus,
+            arg: Box::new(unsigned),
+        })
+    } else {
+        unsigned
+    }
 }

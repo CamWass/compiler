@@ -93,6 +93,15 @@ impl BigIntValue {
             Self::zero()
         }
     }
+
+    pub fn sign(&self) -> BigIntSign {
+        self.sign
+    }
+
+    /// Returns the unsigned component of the BigInt.
+    pub fn into_abs(self) -> BigUintValue {
+        self.data
+    }
 }
 
 impl Neg for BigIntValue {

@@ -6,8 +6,9 @@ use common::{DUMMY_SP, util::take::Take};
 use visit::{VisitMut, VisitMutWith};
 
 use crate::{
+    convert::ecma_number_to_int_32,
     node_util::{
-        TypeFlags, expr_may_have_side_effects, getKnownValueType,
+        TypeFlags, bigintNode, expr_may_have_side_effects, getKnownValueType,
         isObjectDefinePropertiesDefinition, numberNode,
     },
     peephole::{
@@ -22,16 +23,13 @@ use crate::{
 /// make the code harder to analyse. When `late` is true, we would do anything
 /// to minimise for size.
 pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData, late: bool) {
-    let mut visitor = Visitor {
-        program_data,
-        _late: late,
-    };
+    let mut visitor = Visitor { program_data, late };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
     program_data: &'a mut TransformerProgramData,
-    _late: bool,
+    late: bool,
 }
 
 impl Visitor<'_> {
@@ -147,9 +145,58 @@ impl VisitMut<'_> for Visitor<'_> {
                         }
                     }
                 }
-                UnaryOp::Plus => todo!(),
-                UnaryOp::Bang => todo!(),
-                UnaryOp::Tilde => todo!(),
+                UnaryOp::Plus => {
+                    self.tryConvertToNumber(&mut unary.arg);
+
+                    if getKnownValueType(&unary.arg) == TypeFlags::NUMBER {
+                        // + does nothing to numeric values.
+                        *node = unary.arg.as_mut().take();
+                    }
+                }
+                UnaryOp::Bang => {
+                    let Some(arg_value) = getSideEffectFreeBooleanValue(&unary.arg) else {
+                        return;
+                    };
+
+                    // Don't fold !0 and !1 back to booleans.
+                    if self.late
+                        && let Expr::Lit(Lit::Num(arg)) = unary.arg.as_ref()
+                    {
+                        if arg.value == 0.0 || arg.value == 1.0 {
+                            return;
+                        }
+                    }
+                    *node = Expr::Lit(Lit::Bool(Bool {
+                        node_id: self.program_data.new_id_from(unary.arg.node_id()),
+                        value: !arg_value,
+                    }));
+                }
+                UnaryOp::Tilde => {
+                    self.tryConvertToNumber(&mut unary.arg);
+
+                    if let Some(numeric_value) = getSideEffectFreeNumberValue(&unary.arg) {
+                        // TODO: can't we just rely on
+                        // getSideEffectFreeNumberValue if we call it on the
+                        // unary expr instead of the arg, like we do for bigint below?
+                        let int_value = ecma_number_to_int_32(numeric_value);
+                        let bitwise_not_int_value = numberNode(
+                            f64::from(!int_value),
+                            Some(unary.arg.node_id()),
+                            self.program_data,
+                        );
+                        *node = bitwise_not_int_value;
+                        return;
+                    }
+
+                    let arg_node_id = unary.arg.node_id();
+
+                    if let Some(bigintVal) = getSideEffectFreeBigIntValue(node) {
+                        let bigintNotNode =
+                            bigintNode(bigintVal, Some(arg_node_id), self.program_data);
+                        *node = bigintNotNode;
+                        return;
+                    }
+                }
                 UnaryOp::TypeOf => todo!(),
                 UnaryOp::Void => {
                     let is_void_zero = matches!(
@@ -1136,63 +1183,64 @@ mod tests {
     //         test_transform("undefined != new Date()", "true");
     //     }
 
-    // #[test]
-    // fn testUnaryOps() {
-    //     // Running on just changed code results in an exception on only the first invocation. Don't
-    //     // repeat because it confuses the exception verification.
-    //     numRepetitions = 1;
+    #[test]
+    fn testUnaryOps() {
+        // Running on just changed code results in an exception on only the first invocation. Don't
+        // repeat because it confuses the exception verification.
+        // numRepetitions = 1;
 
-    //     // These cases are handled by PeepholeRemoveDeadCode.
-    //     test_same("!foo()");
-    //     test_same("~foo()");
-    //     test_same("-foo()");
+        // These cases are handled by PeepholeRemoveDeadCode.
+        test_same("!foo()");
+        test_same("~foo()");
+        test_same("-foo()");
 
-    //     // These cases are handled here.
-    //     test_transform("a=!true", "a=false");
-    //     test_transform("a=!10", "a=false");
-    //     test_transform("a=!false", "a=true");
-    //     test_same("a=!foo()");
-    //     test_transform("a=-0", "a=-0.0");
-    //     test_transform("a=-(0)", "a=-0.0");
-    //     test_same("a=-Infinity");
-    //     test_transform("a=-NaN", "a=NaN");
-    //     test_same("a=-foo()");
-    //     test_transform("a=~~0", "a=0");
-    //     test_transform("a=~~10", "a=10");
-    //     test_transform("a=~-7", "a=6");
+        // These cases are handled here.
+        test_transform("a=!true", "a=false");
+        test_transform("a=!10", "a=false");
+        test_transform("a=!false", "a=true");
+        test_same("a=!foo()");
+        test_transform("a=-0", "a=-0.0");
+        test_transform("a=-(0)", "a=-0.0");
+        test_same("a=-Infinity");
+        test_transform("a=-NaN", "a=NaN");
+        test_same("a=-foo()");
+        test_transform("a=~~0", "a=0");
+        test_transform("a=~~10", "a=10");
+        test_transform("a=~-7", "a=6");
 
-    //     test_transform("a=+true", "a=1");
-    //     test_transform("a=+10", "a=10");
-    //     test_transform("a=+false", "a=0");
-    //     test_same("a=+foo()");
-    //     test_same("a=+f");
-    //     test_transform("a=+(f?true:false)", "a=+(f?1:0)"); // TODO(johnlenz): foldable
-    //     test_transform("a=+0", "a=0");
-    //     test_transform("a=+Infinity", "a=Infinity");
-    //     test_transform("a=+NaN", "a=NaN");
-    //     test_transform("a=+-7", "a=-7");
-    //     test_transform("a=+.5", "a=.5");
+        test_transform("a=+true", "a=1");
+        test_transform("a=+10", "a=10");
+        test_transform("a=+false", "a=0");
+        test_same("a=+foo()");
+        test_same("a=+f");
+        test_transform("a=+(f?true:false)", "a=(f?1:0)");
+        test_transform("a=+0", "a=0");
+        test_transform("a=+Infinity", "a=Infinity");
+        test_transform("a=+NaN", "a=NaN");
+        test_transform("a=+-7", "a=-7");
+        test_transform("a=+.5", "a=.5");
 
-    //     test_transform("a=~0xffffffff", "a=0");
-    //     test_transform("a=~~0xffffffff", "a=-1");
-    //     test_same("a=~.5", PeepholeFoldConstants.FRACTIONAL_BITWISE_OPERAND);
-    // }
+        test_transform("a=~0xffffffff", "a=0");
+        test_transform("a=~~0xffffffff", "a=-1");
+        // TODO:
+        // test_same("a=~.5", PeepholeFoldConstants.FRACTIONAL_BITWISE_OPERAND);
+    }
 
     #[test]
     fn testUnaryOpsWithBigInt() {
         test_transform("-(1n)", "-1n");
         test_transform("- -1n", "1n");
-        // test_transform("!1n", "false");
-        // test_transform("~0n", "-1n");
+        test_transform("!1n", "false");
+        test_transform("~0n", "-1n");
     }
 
-    //     #[test]
-    //     fn testUnaryOpsStringCompare() {
-    //         test_same("a = -1");
-    //         test_transform("a = ~0", "a = -1");
-    //         test_transform("a = ~1", "a = -2");
-    //         test_transform("a = ~101", "a = -102");
-    //     }
+    #[test]
+    fn testUnaryOpsStringCompare() {
+        test_same("a = -1");
+        test_transform("a = ~0", "a = -1");
+        test_transform("a = ~1", "a = -2");
+        test_transform("a = ~101", "a = -102");
+    }
 
     //     #[test]
     //     fn testFoldLogicalOp() {
@@ -2631,13 +2679,13 @@ mod tests {
     //         test_transform("false+[]", "\"false\"");
     //     }
 
-    //     #[test]
-    //     fn testFoldVoid() {
-    //         test_same("void 0");
-    //         test_transform("void 1", "void 0");
-    //         test_transform("void x", "void 0");
-    //         test_same("void x()");
-    //     }
+    #[test]
+    fn testFoldVoid() {
+        test_same("void 0");
+        test_transform("void 1", "void 0");
+        test_transform("void x", "void 0");
+        test_same("void x()");
+    }
 
     //     #[test]
     //     fn testObjectLiteral() {
@@ -3533,9 +3581,9 @@ mod tests {
     fn test_transform(input: &str, expected: &str) {
         test_transform_inner(input, expected, false);
     }
-    // fn test_same(input: &str) {
-    //     test_same_inner(input, false);
-    // }
+    fn test_same(input: &str) {
+        test_same_inner(input, false);
+    }
 
     fn test_transform_inner(input: &str, expected: &str, late: bool) {
         crate::testing::test_transform(
@@ -3548,7 +3596,7 @@ mod tests {
             expected,
         );
     }
-    // fn test_same_inner(input: &str, late: bool) {
-    //     test_transform_inner(input, input, late);
-    // }
+    fn test_same_inner(input: &str, late: bool) {
+        test_transform_inner(input, input, late);
+    }
 }
