@@ -117,6 +117,9 @@ impl VisitMut<'_> for Visitor<'_> {
             // case ITER_SPREAD -> tryFoldSpread(subtree);
             // TODO:
             // case ARRAYLIT, OBJECTLIT -> tryFlattenArrayOrObjectLit(subtree);
+            Expr::Array(array) => {
+                try_flatten_array_lit(array);
+            }
             Expr::Unary(unary) => match unary.op {
                 UnaryOp::Minus => {
                     self.tryConvertToNumber(&mut unary.arg);
@@ -600,6 +603,47 @@ fn is_equivalent_typeof_ops(left: &Expr, right: &Expr) -> bool {
     }
 
     false
+}
+
+/// Flattens array-literals that contain spreads of other array literals.
+///
+/// E.g. `[0, ...[1, 2, 3], 4, ...[5]]` => `[0, 1, 2, 3, 4, 5]`
+fn try_flatten_array_lit(array: &mut ArrayLit) {
+    // No need to look for nested spreads - we visit the nodes post-order, so
+    // any nested spreads would have already been optimised if possible.
+
+    let mut i = 0;
+    while i < array.elems.len() {
+        if let Some(ExprOrSpread::Spread(spread_element)) = &array.elems[i] {
+            if let Expr::Array(inner_array) = spread_element.expr.as_ref() {
+                if is_safe_to_flatten_array_spread(inner_array) {
+                    let el = array.elems.remove(i);
+                    let mut spread_element = unwrap_as!(el, Some(ExprOrSpread::Spread(s)), s);
+                    let inner_array = unwrap_as!(spread_element.expr.as_mut(), Expr::Array(a), a);
+
+                    let num_stmts = inner_array.elems.len();
+                    // Insert the new elements at the index of the old one to
+                    // preserve ordering.
+                    array.elems.splice(i..i, inner_array.elems.drain(..));
+
+                    if num_stmts > 0 {
+                        // Skip over the new elements.
+                        i += num_stmts - 1;
+                        continue;
+                    } else {
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        i += 1;
+    }
+}
+
+fn is_safe_to_flatten_array_spread(array: &ArrayLit) -> bool {
+    !array.elems.iter().any(|e| e.is_none())
 }
 
 #[cfg(test)]
@@ -2221,19 +2265,18 @@ mod tests {
     //         test_same("x = [0, 1, ...iter][0];");
     //     }
 
-    //     #[test]
-    //     fn testFoldArraySpread() {
-    //         numRepetitions = 1;
-    //         test_transform("x = [...[]]", "x = []");
-    //         test_transform("x = [0, ...[], 1]", "x = [0, 1]");
-    //         test_transform("x = [...[0, 1], 2, ...[3, 4]]", "x = [0, 1, 2, 3, 4]");
-    //         test_transform("x = [...[...[0], 1], 2]", "x = [0, 1, 2]");
-    //         test_same("[...[x]] = arr");
-    //         test_transform("foo([...[...[0], 1], 2])", "foo([0, 1, 2])");
-    //         test_same("x = [1, ...[,], 2];");
-    //         test_same("x = [0, ...[,,], 3];");
-    //         test_same("x = [...[,]];");
-    //     }
+    #[test]
+    fn testFoldArraySpread() {
+        test_transform("x = [...[]]", "x = []");
+        test_transform("x = [0, ...[], 1]", "x = [0, 1]");
+        test_transform("x = [...[0, 1], 2, ...[3, 4]]", "x = [0, 1, 2, 3, 4]");
+        test_transform("x = [...[...[0], 1], 2]", "x = [0, 1, 2]");
+        test_same("[...[x]] = arr");
+        test_transform("foo([...[...[0], 1], 2])", "foo([0, 1, 2])");
+        test_same("x = [1, ...[,], 2];");
+        test_same("x = [0, ...[,,], 3];");
+        test_same("x = [...[,]];");
+    }
 
     //     #[test]
     //     fn testFoldArrayLitSpreadInArg() {
