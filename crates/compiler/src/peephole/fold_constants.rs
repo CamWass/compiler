@@ -117,11 +117,6 @@ impl VisitMut<'_> for Visitor<'_> {
             // case ITER_SPREAD -> tryFoldSpread(subtree);
             // TODO:
             // case ARRAYLIT, OBJECTLIT -> tryFlattenArrayOrObjectLit(subtree);
-            // TODO:
-            // case NOT, POS, NEG, BITNOT -> {
-            //     tryReduceOperandsForOp(subtree);
-            //     yield tryFoldUnaryOperator(subtree);
-            // }
             Expr::Unary(unary) => match unary.op {
                 UnaryOp::Minus => {
                     self.tryConvertToNumber(&mut unary.arg);
