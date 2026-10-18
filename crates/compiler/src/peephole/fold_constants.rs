@@ -115,8 +115,9 @@ impl VisitMut<'_> for Visitor<'_> {
             // case TYPEOF -> tryFoldTypeof(subtree);
             // TODO:
             // case ITER_SPREAD -> tryFoldSpread(subtree);
-            // TODO:
-            // case ARRAYLIT, OBJECTLIT -> tryFlattenArrayOrObjectLit(subtree);
+            Expr::Object(obj) => {
+                try_flatten_object_lit(obj);
+            }
             Expr::Array(array) => {
                 try_flatten_array_lit(array);
             }
@@ -644,6 +645,54 @@ fn try_flatten_array_lit(array: &mut ArrayLit) {
 
 fn is_safe_to_flatten_array_spread(array: &ArrayLit) -> bool {
     !array.elems.iter().any(|e| e.is_none())
+}
+
+/// Flattens object-literals that contain spreads of other object literals.
+///
+/// E.g. `{a, ...{b, c, d}, e, ...{f}}` => `{a, b, c, d, e, f}`
+fn try_flatten_object_lit(obj: &mut ObjectLit) {
+    // No need to look for nested spreads - we visit the nodes post-order, so
+    // any nested spreads would have already been optimised if possible.
+
+    let mut i = 0;
+    while i < obj.props.len() {
+        if let Prop::Spread(spread_prop) = &obj.props[i] {
+            if let Expr::Object(inner_obj) = spread_prop.expr.as_ref() {
+                if is_safe_to_flatten_object_spread(inner_obj) {
+                    let prop = obj.props.remove(i);
+                    let mut spread_prop = unwrap_as!(prop, Prop::Spread(s), s);
+                    let inner_obj = unwrap_as!(spread_prop.expr.as_mut(), Expr::Object(a), a);
+
+                    let num_stmts = inner_obj.props.len();
+                    // Insert the new props at the index of the old one to
+                    // preserve ordering.
+                    obj.props.splice(i..i, inner_obj.props.drain(..));
+
+                    if num_stmts > 0 {
+                        // Skip over the new props.
+                        i += num_stmts - 1;
+                        continue;
+                    } else {
+                        i += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        i += 1;
+    }
+}
+
+fn is_safe_to_flatten_object_spread(object: &ObjectLit) -> bool {
+    // Object spread converts all properties to regular data properties. This
+    // step evaluates any getters and omits any setters.
+    // See https://tc39.es/ecma262/#sec-copydataproperties.
+    // For simplicity, we just back off and do not flatten spread in this case.
+    !object
+        .props
+        .iter()
+        .any(|p| matches!(p, Prop::Getter(_) | Prop::Setter(_)))
 }
 
 #[cfg(test)]
@@ -2314,49 +2363,50 @@ mod tests {
     //         test_transform("x = {a, ...obj, c}.c;", "x = c;"); // We assume object spread has no side-effects.
     //     }
 
-    //     #[test]
-    //     fn testFoldObjectSpread() {
-    //         numRepetitions = 1;
-    //         test_transform("x = {...{}}", "x = {}");
-    //         test_transform("x = {a, ...{}, b}", "x = {a, b}");
-    //         test_transform("x = {...{a, b}, c, ...{d, e}}", "x = {a, b, c, d, e}");
-    //         test_transform("x = {...{...{a}, b}, c}", "x = {a, b, c}");
-    //         test_same("({...{x}} = obj)");
-    //     }
+    #[test]
+    fn testFoldObjectSpread() {
+        test_transform("x = {...{}}", "x = {}");
+        test_transform("x = {a, ...{}, b}", "x = {a, b}");
+        test_transform("x = {...{a, b}, c, ...{d, e}}", "x = {a, b, c, d, e}");
+        test_transform("x = {...{...{a}, b}, c}", "x = {a, b, c}");
+        test_same("({...{x}} = obj)");
+    }
 
-    //     #[test]
-    //     fn testDontFoldObjectSpread_withGetterSetter() {
-    //         numRepetitions = 1;
+    #[test]
+    fn testDontFoldObjectSpread_withGetterSetter() {
+        // At runtime, object spread converts getters to regular data
+        // properties, and omits setters. We back off on folding spread with
+        // getters & setters. In theory, we could make the compiler smart enough
+        // to turn
+        //   `{...{get a() { return 1; }}}`
+        // into
+        //   `{a: 1}`
+        // or
+        //   `{...{set a(v) { }}}`
+        // into
+        //   `{}`
+        // but it doesn't seem worth the complexity right now.
+        test_same("x = {...{get a() { return 1; }}}");
+        test_same("x = {...{set a(v) { }}}");
 
-    //         // At runtime, object spread converts getters to regular data properties, and omits setters.
-    //         // We back off on folding spread with getters & setters.
-    //         // In theory, we could make the compiler smart enough to turn
-    //         //   `{...{get a() { return 1; }}}` into `{a: 1}`, or `{...{set a(v) { }}}` into `{}`, but
-    //         // it doesn't seem worth the complexity right now.
-    //         test_same("x = {...{get a() { return 1; }}}");
-    //         test_same("x = {...{set a(v) { }}}");
+        // Test case with side-effects. If in the future we implement spread folding for getters/setters
+        // we would need to preserve evaluation of the console.log.
+        test_same("x = {...{get a() { console.log('hi'); return 1; }}}");
+    }
 
-    //         // Test case with side-effects. If in the future we implement spread folding for getters/setters
-    //         // we would need to preserve evaluation of the console.log.
-    //         test_same("x = {...{get a() { console.log('hi'); return 1; }}}");
-    //     }
+    #[test]
+    fn testDontFoldObjectSpread_withComputedGetterSetter() {
+        test_same("x = {...{get [a]() { return 1; }}}");
+        test_same("x = {...{set [a](v) { }}}");
+    }
 
-    //     #[test]
-    //     fn testDontFoldObjectSpread_withComputedGetterSetter() {
-    //         numRepetitions = 1;
-
-    //         test_same("x = {...{get [a]() { return 1; }}}");
-    //         test_same("x = {...{set [a](v) { }}}");
-    //     }
-
-    //     #[test]
-    //     fn testDontFoldMixedObjectAndArraySpread() {
-    //         numRepetitions = 1;
-    //         test_same("x = [...{}]");
-    //         test_same("x = {...[]}");
-    //         test_transform("x = [a, ...[...{}]]", "x = [a, ...{}]");
-    //         test_transform("x = {a, ...{...[]}}", "x = {a, ...[]}");
-    //     }
+    #[test]
+    fn testDontFoldMixedObjectAndArraySpread() {
+        test_same("x = [...{}]");
+        test_same("x = {...[]}");
+        test_transform("x = [a, ...[...{}]]", "x = [a, ...{}]");
+        test_transform("x = {a, ...{...[]}}", "x = {a, ...[]}");
+    }
 
     //     #[test]
     //     fn testFoldComplex() {
